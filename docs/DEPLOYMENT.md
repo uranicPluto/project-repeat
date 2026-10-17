@@ -26,6 +26,8 @@ Configure the following environment variables in your Vercel project settings or
 | `RAZORPAY_KEY_ID` | Optional | Razorpay API key for live subscription billing | `rzp_live_...` (Omit for Sandbox Mode) |
 | `RAZORPAY_KEY_SECRET` | Optional | Razorpay API secret | `secret_...` |
 | `RAZORPAY_WEBHOOK_SECRET` | Optional | Secret for verifying incoming Razorpay webhooks | `whsec_...` |
+| `ALLOW_DEMO_CREDENTIALS` | Optional | Explicitly permits public demo accounts in production (Defaults to `false`) | `false` |
+| `ALLOW_SQLITE_IN_PRODUCTION` | Optional | Explicitly overrides production SQLite block for isolated preview tests | `false` |
 
 > [!CAUTION]
 > In production (`NODE_ENV=production`), `SESSION_SECRET` must be set and contain at least 32 characters. If omitted or under 32 characters, the application throws a fatal configuration error on startup to prevent insecure session forgery.
@@ -55,9 +57,9 @@ Configure the following environment variables in your Vercel project settings or
    ```
 
 ### B. Seeding Initial Demo Data (Optional for Staging)
-To populate demo businesses, cards, staff, and transactions for demonstration or testing:
+To populate demo businesses, cards, staff, and transactions for isolated testing:
 ```bash
-npm run prisma:seed
+ALLOW_PRODUCTION_SEED=true npm run prisma:seed
 ```
 
 ---
@@ -84,10 +86,11 @@ In the Vercel Dashboard project settings:
 
 Post-deployment, execute these verification checks:
 
-1. **Public Marketing Homepage**: Load `https://your-domain.com/` & verify status `200 OK`.
-2. **Branded Business Storefront**: Load `https://your-domain.com/b/the-coffee-house` & verify status `200 OK`.
-3. **Session Secret Security**: Inspect application server logs to verify no `SESSION_SECRET` fallback warnings exist.
-4. **Counter Verification Flow**: Sign in as `barista@thecoffeehouse.com` and load `/dashboard/the-coffee-house/verify`.
-5. **Customer Wallet Flow**: Sign in as customer and open `/wallet`.
-6. **Billing Page**: Verify `/dashboard/the-coffee-house/billing` displays subscription plan options (with Sandbox Mode banner if live keys are unset).
-7. **Privacy Compliance**: Sign in and navigate to `/account` & verify JSON data export download and consent toggles work without errors.
+1. **System Health Probe**: Load `https://your-domain.com/api/health` & verify response `{ "status": "healthy", "database": { "connected": true, "provider": "postgresql" } }`.
+2. **Public Marketing Homepage**: Load `https://your-domain.com/` & verify status `200 OK`.
+3. **Branded Business Storefront**: Load `https://your-domain.com/b/the-coffee-house` & verify status `200 OK`.
+4. **Session Secret Security**: Inspect application server logs to verify no `SESSION_SECRET` fallback warnings exist.
+5. **Counter Verification Flow**: Sign in as staff and load `/dashboard/the-coffee-house/verify`.
+6. **Customer Wallet Flow**: Sign in as customer and open `/wallet`.
+7. **Billing Page**: Verify `/dashboard/the-coffee-house/billing` displays subscription plan options (with Sandbox Mode banner if live keys are unset).
+8. **Privacy Compliance**: Sign in and navigate to `/account` & verify JSON data export download and consent toggles work without errors.

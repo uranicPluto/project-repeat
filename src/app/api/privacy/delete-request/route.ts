@@ -42,14 +42,14 @@ export async function POST(req: NextRequest) {
         where: { id: session.userId },
       });
 
-      // Audit log of anonymized deletion
+      // Audit log of anonymized deletion without retaining deleted email
       await tx.auditLog.create({
         data: {
           action: "ACCOUNT_DELETED",
           details: JSON.stringify({
             deletedUserId: session.userId,
-            deletedEmail: session.email,
             reason: "User initiated privacy erasure (Right to be Forgotten)",
+            requestedAt: new Date().toISOString(),
           }),
         },
       });

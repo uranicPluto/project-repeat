@@ -8,6 +8,7 @@ Project Repeat uses **PostgreSQL** as its official production database engine, a
 - **Local Development**: SQLite (offline zero-dependency dev) or local PostgreSQL via Docker
 - **Connection Pooling**: Supported via PgBouncer / Prisma Accelerate (`?pgbouncer=true&connection_limit=10`)
 - **Schema Location**: `prisma/schema.postgresql.prisma` (Production) & `prisma/schema.prisma`
+- **Health Check Probe**: `/api/health`
 
 ---
 
@@ -16,7 +17,7 @@ Project Repeat uses **PostgreSQL** as its official production database engine, a
 ### 1. Connecting a Managed PostgreSQL Instance
 In production on Vercel, Supabase, or AWS:
 1. Provision a PostgreSQL instance (e.g., Neon serverless Postgres).
-2. Set `DATABASE_URL` in your production environment variables:
+2. Set `DATABASE_URL` and `DIRECT_URL` in your production environment variables:
    ```env
    # Pooled connection string (for serverless execution)
    DATABASE_URL="postgresql://user:password@ep-repeat-pooler.us-east-2.aws.neon.tech/repeat?sslmode=require&pgbouncer=true"
@@ -28,14 +29,18 @@ In production on Vercel, Supabase, or AWS:
    ```bash
    npx prisma migrate deploy --schema=prisma/schema.postgresql.prisma
    ```
-4. Seed initial platform admin and business templates:
+   Or apply the SQL migration directly:
    ```bash
-   node prisma/seed.js
+   psql "$DATABASE_URL" -f prisma/migrations/20261018000000_init/migration.sql
    ```
 
 ### 2. Dual-Schema Strategy
 - **`prisma/schema.postgresql.prisma`**: Primary production definition targeting `provider = "postgresql"`. Includes native PostgreSQL indexing, timestamp precision (`TIMESTAMP(3)`), and foreign key cascade rules.
 - **`prisma/schema.prisma`**: Configured for local SQLite development without requiring external database dependencies during offline development.
+
+### 3. Production Runtime Guards
+- `src/lib/db/prisma.ts` enforces that if `NODE_ENV === "production"`, `DATABASE_URL` must be a valid PostgreSQL connection string. Silent fallback to SQLite is blocked with a fatal configuration error unless `ALLOW_SQLITE_IN_PRODUCTION=true` is explicitly provided for isolated preview evaluation.
+- Live database health probe is available at `GET /api/health`, returning latency in milliseconds and database status without exposing credentials.
 
 ---
 
@@ -91,7 +96,7 @@ Configurable loyalty programs per business.
 - `terms` (String, nullable)
 - `createdAt`, `updatedAt` (DateTime)
 
-### 5. `Reward`
+### 5. `Reward` (Non-Destructive Versioning)
 Milestone rewards defined within a program.
 - `id` (CUID, Primary Key)
 - `programId` (FK -> LoyaltyProgram.id)
@@ -101,7 +106,7 @@ Milestone rewards defined within a program.
 - `rewardType` (Enum: `FREE_ITEM`, `DISCOUNT_PERCENT`, `DISCOUNT_FIXED`)
 - `discountValue` (Int, minor units or percentage points)
 - `validityDays` (Int, default 30) - number of days reward is valid after unlocking
-- `isActive` (Boolean, default true)
+- `isActive` (Boolean, default true) - retired rewards are archived with `isActive = false` to preserve historical redemptions
 
 ### 6. `LoyaltyEnrollment` (Repeatable Cycles & Stamp Ledger)
 A customer's active loyalty card with a specific business and program.
@@ -139,7 +144,7 @@ Expiring 6-digit verification codes to prevent QR screenshot and duplication fra
 - `verifiedByStaffId` (FK -> User.id, nullable)
 - `verifiedAt` (DateTime, nullable)
 
-### 9. `RewardRedemption`
+### 9. `RewardRedemption` (Concurrency & Cycle Scoped)
 Atomic, auditable record of a redeemed reward milestone.
 - `id` (CUID, Primary Key)
 - `enrollmentId` (FK -> LoyaltyEnrollment.id)
@@ -150,15 +155,16 @@ Atomic, auditable record of a redeemed reward milestone.
 - `redemptionCode` (String, nullable) - unique redemption reference
 - `redeemedAt` (DateTime)
 - `expiresAt` (DateTime, nullable) - expiration deadline based on `Reward.validityDays`
+- *Unique Constraint*: `[enrollmentId, rewardId, cycle]` (Physically blocks concurrent double-redemptions in the same cycle)
 
 ### 10. `Subscription`
 Business subscription billing tracking.
 - `id` (CUID, Primary Key)
 - `businessId` (FK -> Business.id, unique)
 - `planId` (Enum: `STARTER`, `GROWTH`, `PRO`, `ENTERPRISE`)
-- `status` (Enum: `TRIALING`, `ACTIVE`, `PAST_DUE`, `CANCELLED`)
+- `status` (Enum: `TRIALING`, `ACTIVE`, `PAST_DUE`, `CANCELLED`, `PAUSED`)
 - `currentPeriodStart`, `currentPeriodEnd` (DateTime)
-- `paymentProvider` (String) - e.g. "razorpay" or "mock"
+- `paymentProvider` (String) - e.g. "razorpay" or "mock_sandbox"
 - `providerSubscriptionId` (String, nullable)
 
 ### 11. `AuditLog`
@@ -166,7 +172,7 @@ Immutable operational audit ledger.
 - `id` (CUID, Primary Key)
 - `actorUserId` (FK -> User.id, nullable)
 - `businessId` (FK -> Business.id, nullable)
-- `action` (String) - e.g., "STAFF_INVITED", "STAFF_REVOKED", "VISIT_VERIFIED", "REWARD_REDEEMED"
+- `action` (String) - e.g., "STAFF_INVITED", "STAFF_REVOKED", "VISIT_VERIFIED", "REWARD_REDEEMED", "ACCOUNT_DELETED", "WEBHOOK_PROCESSED"
 - `details` (String / JSON stringified)
 - `ipAddress` (String, nullable)
 - `createdAt` (DateTime)

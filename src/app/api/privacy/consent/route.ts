@@ -4,6 +4,7 @@ import { getRequestSession } from "@/lib/auth/session";
 import { z } from "zod";
 
 const consentSchema = z.object({
+  businessId: z.string().optional(),
   marketingEmail: z.boolean(),
   marketingSms: z.boolean().optional(),
 });
@@ -18,14 +19,12 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const validated = consentSchema.parse(body);
 
-    // Update or create consent record for customer across default platform or businesses
-    // For default preferences, we can link to first business or create a platform entry
     const user = await prisma.user.findUnique({
       where: { id: session.userId },
       include: { enrollments: true },
     });
 
-    const businessId = user?.enrollments[0]?.businessId || "platform";
+    const businessId = validated.businessId || user?.enrollments[0]?.businessId || "platform";
 
     const consent = await prisma.customerConsent.upsert({
       where: {

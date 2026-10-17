@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequestSession } from "@/lib/auth/session";
-import { requireBusinessAccess } from "@/lib/permissions/rbac";
+import { validateLiveBusinessAccess } from "@/lib/permissions/rbac";
 import { LoyaltyService } from "@/server/services/loyalty";
 import { redeemRewardSchema } from "@/lib/validation/schemas";
 
@@ -10,8 +10,8 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const validated = redeemRewardSchema.parse(body);
 
-    // Enforce business authorization for staff
-    requireBusinessAccess(session, validated.businessId, ["OWNER", "MANAGER", "STAFF"]);
+    // Enforce live business authorization for staff
+    await validateLiveBusinessAccess(session, validated.businessId, ["OWNER", "MANAGER", "STAFF"]);
 
     const redemption = await LoyaltyService.redeemReward({
       enrollmentId: validated.enrollmentId,

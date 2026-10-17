@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/db/prisma";
+import { PLAN_CATALOG } from "./billing";
+import crypto from "crypto";
 
 export interface ProgramProgress {
   enrollmentId: string;
@@ -55,6 +57,23 @@ export class LoyaltyService {
 
     if (existing) {
       return existing;
+    }
+
+    // Enforce business subscription plan capacity limit
+    const currentMemberCount = await prisma.loyaltyEnrollment.count({
+      where: { businessId: program.businessId },
+    });
+
+    const subscription = await prisma.subscription.findUnique({
+      where: { businessId: program.businessId },
+    });
+    const planKey = (subscription?.planId || "STARTER") as keyof typeof PLAN_CATALOG;
+    const plan = PLAN_CATALOG[planKey] || PLAN_CATALOG.STARTER;
+
+    if (currentMemberCount >= plan.maxMembers) {
+      throw new Error(
+        `Business capacity reached: This business's current ${plan.name} plan has reached its limit of ${plan.maxMembers} members.`
+      );
     }
 
     return prisma.loyaltyEnrollment.create({
@@ -228,7 +247,7 @@ export class LoyaltyService {
         );
       }
 
-      const redemptionCode = `RDM-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+      const redemptionCode = `RDM-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
       const expiresAt = new Date(Date.now() + (reward.validityDays || 30) * 24 * 60 * 60 * 1000);
 
       // Record atomic redemption with staff attribution & cycle

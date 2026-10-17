@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { getRequestSession } from "@/lib/auth/session";
-import { requireBusinessAccess } from "@/lib/permissions/rbac";
+import { validateLiveBusinessAccess } from "@/lib/permissions/rbac";
 import { PLAN_CATALOG } from "@/server/services/billing";
 import { z } from "zod";
 
@@ -16,8 +16,8 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { businessId, planId } = changePlanSchema.parse(body);
 
-    // Enforce OWNER role check
-    requireBusinessAccess(session, businessId, ["OWNER"]);
+    // Enforce live OWNER role check
+    await validateLiveBusinessAccess(session, businessId, ["OWNER"]);
 
     const targetPlan = PLAN_CATALOG[planId];
     if (!targetPlan) {
@@ -28,7 +28,37 @@ export async function POST(req: NextRequest) {
       process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET
     );
 
-    // If live credentials are not present, operate in sandbox test mode
+    // In production without live credentials, block unverified plan spoofing
+    if (
+      process.env.NODE_ENV === "production" &&
+      !isRazorpayConfigured &&
+      process.env.ALLOW_SANDBOX_BILLING !== "true"
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Live payment gateway is unconfigured. To activate paid subscriptions in production, configure RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, and RAZORPAY_WEBHOOK_SECRET in your environment.",
+          isConfigured: false,
+        },
+        { status: 503 }
+      );
+    }
+
+    // If Razorpay is configured in production, generate checkout parameters for live payment flow
+    if (isRazorpayConfigured && process.env.NODE_ENV === "production") {
+      return NextResponse.json({
+        success: true,
+        checkoutRequired: true,
+        keyId: process.env.RAZORPAY_KEY_ID,
+        amount: targetPlan.priceMinorUnits,
+        currency: "INR",
+        plan: targetPlan,
+        businessId,
+        message: `Initiate checkout for ${targetPlan.name} plan at ₹${targetPlan.priceMonthlyINR}/mo.`,
+      });
+    }
+
+    // In development or sandbox evaluation mode:
     const currentPeriodStart = new Date();
     const currentPeriodEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
 
@@ -39,7 +69,7 @@ export async function POST(req: NextRequest) {
         status: "ACTIVE",
         currentPeriodStart,
         currentPeriodEnd,
-        paymentProvider: isRazorpayConfigured ? "razorpay" : "mock_sandbox",
+        paymentProvider: "mock_sandbox",
       },
       create: {
         businessId,
@@ -47,7 +77,7 @@ export async function POST(req: NextRequest) {
         status: "ACTIVE",
         currentPeriodStart,
         currentPeriodEnd,
-        paymentProvider: isRazorpayConfigured ? "razorpay" : "mock_sandbox",
+        paymentProvider: "mock_sandbox",
       },
     });
 

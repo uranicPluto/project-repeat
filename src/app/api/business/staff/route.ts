@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { getRequestSession, hashPassword } from "@/lib/auth/session";
-import { requireBusinessAccess } from "@/lib/permissions/rbac";
+import { validateLiveBusinessAccess } from "@/lib/permissions/rbac";
+import { PLAN_CATALOG } from "@/server/services/billing";
 import { z } from "zod";
 
 const addStaffSchema = z.object({
@@ -18,8 +19,31 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const validated = addStaffSchema.parse(body);
 
-    // Only OWNER can add staff
-    requireBusinessAccess(session, validated.businessId, ["OWNER"]);
+    // Only active OWNER can add staff
+    await validateLiveBusinessAccess(session, validated.businessId, ["OWNER"]);
+
+    // Enforce plan limit for staff accounts
+    const currentStaffCount = await prisma.businessMembership.count({
+      where: {
+        businessId: validated.businessId,
+        role: { in: ["MANAGER", "STAFF"] },
+      },
+    });
+
+    const subscription = await prisma.subscription.findUnique({
+      where: { businessId: validated.businessId },
+    });
+    const planKey = (subscription?.planId || "STARTER") as keyof typeof PLAN_CATALOG;
+    const plan = PLAN_CATALOG[planKey] || PLAN_CATALOG.STARTER;
+
+    if (currentStaffCount >= plan.maxStaff) {
+      return NextResponse.json(
+        {
+          error: `Plan limit reached: Your current ${plan.name} plan allows up to ${plan.maxStaff} staff account(s). Please upgrade your subscription to add more team members.`,
+        },
+        { status: 403 }
+      );
+    }
 
     let user = await prisma.user.findUnique({
       where: { email: validated.email.toLowerCase() },
@@ -96,8 +120,8 @@ export async function DELETE(req: NextRequest) {
     const body = await req.json();
     const { businessId, membershipId } = removeStaffSchema.parse(body);
 
-    // Only OWNER can remove staff
-    requireBusinessAccess(session, businessId, ["OWNER"]);
+    // Only active OWNER can remove staff
+    await validateLiveBusinessAccess(session, businessId, ["OWNER"]);
 
     const targetMembership = await prisma.businessMembership.findUnique({
       where: { id: membershipId },

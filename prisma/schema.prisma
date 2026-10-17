@@ -181,6 +181,7 @@ model RewardRedemption {
   reward       Reward            @relation(fields: [rewardId], references: [id], onDelete: Cascade)
   staffUser    User              @relation("StaffRedemptions", fields: [staffUserId], references: [id])
 
+  @@unique([enrollmentId, rewardId, cycle])
   @@index([enrollmentId])
   @@index([rewardId])
 }

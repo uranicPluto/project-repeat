@@ -207,6 +207,7 @@ CREATE INDEX "VisitVerification_code_idx" ON "VisitVerification"("code");
 
 CREATE INDEX "RewardRedemption_enrollmentId_idx" ON "RewardRedemption"("enrollmentId");
 CREATE INDEX "RewardRedemption_rewardId_idx" ON "RewardRedemption"("rewardId");
+CREATE UNIQUE INDEX "RewardRedemption_enrollmentId_rewardId_cycle_key" ON "RewardRedemption"("enrollmentId", "rewardId", "cycle");
 
 CREATE UNIQUE INDEX "Subscription_businessId_key" ON "Subscription"("businessId");
 CREATE INDEX "Subscription_businessId_idx" ON "Subscription"("businessId");

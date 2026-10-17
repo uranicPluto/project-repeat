@@ -20,15 +20,25 @@ export async function POST(req: NextRequest) {
 
     const event = JSON.parse(rawBody);
 
-    // Process subscription events
-    if (event.event === "subscription.activated" || event.event === "subscription.charged") {
-      const sub = event.payload.subscription.entity;
-      const businessId = sub.notes?.businessId;
-      const planId = sub.notes?.planId || "GROWTH";
+    // Process subscription lifecycle events
+    const supportedEvents = new Set([
+      "subscription.activated",
+      "subscription.charged",
+      "subscription.cancelled",
+      "subscription.halted",
+      "subscription.paused",
+      "payment.failed",
+    ]);
+
+    if (supportedEvents.has(event.event)) {
+      const entity = event.payload?.subscription?.entity || event.payload?.payment?.entity;
+      const businessId = entity?.notes?.businessId;
+      const planId = entity?.notes?.planId || "GROWTH";
+      const eventId = event.id || entity?.id || `evt-${Date.now()}`;
 
       if (businessId) {
         await BillingService.handlePaymentWebhook({
-          id: sub.id,
+          id: eventId,
           type: event.event,
           businessId,
           planId,

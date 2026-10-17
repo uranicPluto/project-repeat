@@ -23,6 +23,26 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
     }
 
+    const DEMO_ACCOUNTS = new Set([
+      "admin@projectrepeat.com",
+      "owner@thecoffeehouse.com",
+      "barista@thecoffeehouse.com",
+      "owner@urbancuts.com",
+      "priya.sharma@example.com",
+      "rahul.verma@example.com",
+    ]);
+
+    if (
+      process.env.NODE_ENV === "production" &&
+      process.env.ALLOW_DEMO_CREDENTIALS !== "true" &&
+      DEMO_ACCOUNTS.has(user.email.toLowerCase())
+    ) {
+      return NextResponse.json(
+        { error: "Public demo accounts are disabled in production mode. Please use your registered business credentials." },
+        { status: 403 }
+      );
+    }
+
     if (user.status !== "ACTIVE") {
       return NextResponse.json({ error: "This account is suspended or inactive" }, { status: 403 });
     }

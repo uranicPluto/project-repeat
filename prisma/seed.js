@@ -1,6 +1,16 @@
 const { PrismaClient } = require("@prisma/client");
 const bcrypt = require("bcryptjs");
 
+// Safety guard: Prevent accidental demo data seeding in production
+if (process.env.NODE_ENV === "production" && process.env.ALLOW_PRODUCTION_SEED !== "true") {
+  console.error(
+    "❌ FATAL: prisma/seed.js is intended for local development and test environments only.\n" +
+    "Seeding is disabled in production to prevent inserting publicly documented demo credentials.\n" +
+    "To override explicitly for isolated staging environments, set ALLOW_PRODUCTION_SEED=true."
+  );
+  process.exit(1);
+}
+
 const prisma = new PrismaClient();
 
 async function main() {

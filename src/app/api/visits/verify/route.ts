@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequestSession } from "@/lib/auth/session";
-import { requireBusinessAccess } from "@/lib/permissions/rbac";
+import { validateLiveBusinessAccess } from "@/lib/permissions/rbac";
 import { VerificationService } from "@/server/services/verification";
 import { verifyVisitSchema } from "@/lib/validation/schemas";
 
@@ -10,8 +10,8 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const validated = verifyVisitSchema.parse(body);
 
-    // Enforce server-side authorization: staff must have membership in this business
-    requireBusinessAccess(session, validated.businessId, ["OWNER", "MANAGER", "STAFF"]);
+    // Enforce live server-side authorization: staff must have active membership in this business
+    await validateLiveBusinessAccess(session, validated.businessId, ["OWNER", "MANAGER", "STAFF"]);
 
     const result = await VerificationService.verifyVisitByCode({
       code: validated.code,

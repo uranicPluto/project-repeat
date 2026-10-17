@@ -104,7 +104,7 @@ export class BillingService {
   }
 
   /**
-   * Verify Razorpay Webhook signature
+   * Verify Razorpay Webhook signature with timing-safe comparison
    */
   static verifyWebhookSignature(payload: string, signature: string, secret: string): boolean {
     if (!secret || !signature) return false;
@@ -116,36 +116,93 @@ export class BillingService {
   }
 
   /**
-   * Handle incoming payment webhook idempotently
+   * Verify Razorpay client-side payment completion signature
+   */
+  static verifyPaymentSignature(params: {
+    orderId: string;
+    paymentId: string;
+    signature: string;
+    secret: string;
+  }): boolean {
+    const { orderId, paymentId, signature, secret } = params;
+    if (!secret || !signature) return false;
+    const text = `${orderId}|${paymentId}`;
+    const expectedSignature = crypto.createHmac("sha256", secret).update(text).digest("hex");
+    const expectedBuf = Buffer.from(expectedSignature);
+    const signatureBuf = Buffer.from(signature);
+    if (expectedBuf.length !== signatureBuf.length) return false;
+    return crypto.timingSafeEqual(expectedBuf, signatureBuf);
+  }
+
+  /**
+   * Handle incoming payment webhook idempotently with full lifecycle support
    */
   static async handlePaymentWebhook(event: {
     id: string;
     type: string;
     businessId: string;
-    planId: string;
+    planId?: string;
   }) {
-    // Idempotent upsert
+    // Check idempotency: if event ID has already been processed, skip duplicate execution
+    const duplicateCheck = await prisma.auditLog.findFirst({
+      where: {
+        action: "WEBHOOK_PROCESSED",
+        details: { contains: event.id },
+      },
+    });
+
+    if (duplicateCheck) {
+      return { duplicate: true };
+    }
+
     const currentPeriodStart = new Date();
     const currentPeriodEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+    let targetStatus = "ACTIVE";
 
-    return prisma.subscription.upsert({
+    if (event.type === "subscription.cancelled") {
+      targetStatus = "CANCELLED";
+    } else if (event.type === "subscription.halted" || event.type === "payment.failed") {
+      targetStatus = "PAST_DUE";
+    } else if (event.type === "subscription.paused") {
+      targetStatus = "PAUSED";
+    }
+
+    const planId = event.planId || "GROWTH";
+
+    const subscription = await prisma.subscription.upsert({
       where: { businessId: event.businessId },
       update: {
-        planId: event.planId,
-        status: "ACTIVE",
+        planId,
+        status: targetStatus,
         currentPeriodStart,
         currentPeriodEnd,
         providerSubscriptionId: event.id,
       },
       create: {
         businessId: event.businessId,
-        planId: event.planId,
-        status: "ACTIVE",
+        planId,
+        status: targetStatus,
         currentPeriodStart,
         currentPeriodEnd,
         paymentProvider: "razorpay",
         providerSubscriptionId: event.id,
       },
     });
+
+    // Record idempotent webhook processing audit log
+    await prisma.auditLog.create({
+      data: {
+        businessId: event.businessId,
+        action: "WEBHOOK_PROCESSED",
+        details: JSON.stringify({
+          webhookEventId: event.id,
+          eventType: event.type,
+          targetStatus,
+          planId,
+        }),
+      },
+    });
+
+    return { duplicate: false, subscription };
   }
 }

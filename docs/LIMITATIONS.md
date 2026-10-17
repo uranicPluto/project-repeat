@@ -6,13 +6,16 @@ This document details known limitations, architectural boundaries, and operation
 
 ## 1. Payment Gateway & Subscriptions
 
-### Current Implementation
+### Current Implementation & Production Isolation
 - **Adapter & Sandbox Architecture**: Project Repeat implements a modular billing abstraction (`src/server/services/billing.ts` and `src/app/api/business/subscription/route.ts`).
-- **Sandbox Fallback**: When `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET` are not set in the environment, the platform operates in **Sandbox Mode**. In Sandbox Mode:
-  - Business owners can preview and switch between all subscription tiers (Starter ₹299/mo, Growth ₹499/mo, Pro ₹999/mo, Enterprise ₹2499/mo).
-  - Test billing cycles, tier upgrades, and downgrades are simulated and persisted directly to the business record with audit logs.
-  - A clear visual badge indicates when the environment is in Sandbox Mode.
-- **Webhook Signature Verification**: Webhook verification is fully implemented with timing-safe HMAC SHA-256 signatures (`crypto.timingSafeEqual`) to prevent timing attacks.
+- **Production Guard against Plan Spoofing**: In production (`NODE_ENV === "production"`), directly switching plans without payment is strictly blocked with `503 Service Unavailable` unless live Razorpay credentials are configured or `ALLOW_SANDBOX_BILLING=true` is explicitly provided for isolated staging.
+- **Server-Side Plan Limit Enforcement**:
+  - `LoyaltyService.enrollCustomer` enforces `plan.maxMembers` (e.g. 200 for Starter, 1,000 for Growth).
+  - `POST /api/business/staff` enforces `plan.maxStaff` (e.g. 1 for Starter, 3 for Growth).
+- **Full Webhook Lifecycle Support**:
+  - Timing-safe HMAC SHA-256 signature verification (`crypto.timingSafeEqual`).
+  - Supports `subscription.activated`, `subscription.charged`, `subscription.cancelled`, `subscription.halted`, `subscription.paused`, and `payment.failed`.
+  - Idempotent deduplication using event ID tracking to prevent duplicate billing processing.
 
 ### Production Requirement for Live Payments
 - Set `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, and `RAZORPAY_WEBHOOK_SECRET` in production environment settings.
@@ -20,17 +23,27 @@ This document details known limitations, architectural boundaries, and operation
 
 ---
 
-## 2. Database Persistence & Serverless Environments
+## 2. Public Demo Credentials & Production Security
+
+### Current Implementation
+- `prisma/seed.js` includes a strict guard that terminates immediately if executed in production without `ALLOW_PRODUCTION_SEED=true`.
+- In production (`NODE_ENV === "production"`), default demo accounts (`admin@projectrepeat.com`, `owner@thecoffeehouse.com`, etc.) are blocked from authenticating unless `ALLOW_DEMO_CREDENTIALS=true` is set.
+- `prisma/dev.db` has been untracked from Git and added to `.gitignore` to prevent bundling development database artifacts into production builds.
+
+---
+
+## 3. Database Persistence & Serverless Environments
 
 ### Dual-Schema Strategy
 - **Local Development**: Uses SQLite via `prisma/schema.prisma` for frictionless local development without requiring local PostgreSQL daemon management.
 - **Production Persistence**: Production **must** use managed PostgreSQL (e.g., Neon, Supabase, Amazon RDS) via `prisma/schema.postgresql.prisma` or setting `provider = "postgresql"` in `prisma/schema.prisma`.
-- **Runtime Guard**: `src/lib/db/prisma.ts` enforces a runtime warning/error check in production if `DATABASE_URL` is missing or uses SQLite.
+- **Runtime Guard**: `src/lib/db/prisma.ts` throws a fatal error on startup in production if `DATABASE_URL` is missing or uses SQLite without `ALLOW_SQLITE_IN_PRODUCTION=true`.
 - **Serverless Connections**: Serverless platforms (e.g., Vercel) create short-lived lambdas. In production, utilize connection pooling (e.g., Neon connection pooling, Supabase Transaction pooler, or Prisma Accelerate) with `?pgbouncer=true&connection_limit=10`.
+- **Live Health Check**: `GET /api/health` probes the database and measures query latency without exposing credentials.
 
 ---
 
-## 3. Media & File Storage
+## 4. Media & File Storage
 
 ### Current Implementation
 - Business logos and signage branding currently support external HTTPS image URLs (e.g., Cloudinary, Unsplash, or CDN-hosted assets) stored as text URLs in the `Business.logoUrl` schema field.
@@ -41,11 +54,11 @@ This document details known limitations, architectural boundaries, and operation
 
 ---
 
-## 4. Notifications & Communications
+## 5. Notifications & Communications
 
 ### Current Implementation
-- An email and SMS notification interface is structured in the server services layer.
-- Development and preview environments log outgoing transactional notifications (welcome messages, visit confirmations, perk unlock alerts) to structured logs without external delivery failures.
+- `NotificationService` in `src/server/services/notifications.ts` checks customer privacy preferences (`CustomerConsent`) and suppresses promotional messages if the user has opted out, while allowing critical transactional visit confirmations.
+- Development and preview environments log outgoing transactional notifications to structured logs.
 
 ### Production Consideration
 - Connect transactional email services (e.g., Resend, SendGrid, or AWS SES) by providing `RESEND_API_KEY` and setting up verified domain DKIM/SPF records.
@@ -53,7 +66,7 @@ This document details known limitations, architectural boundaries, and operation
 
 ---
 
-## 5. Offline & PWA Capabilities
+## 6. Offline & PWA Capabilities
 
 ### Current Implementation
 - Customer wallet (`/wallet`) and business counter verification terminal (`/dashboard/[slug]/verify`) are built as mobile-first, responsive web applications requiring an active internet connection.

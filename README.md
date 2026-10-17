@@ -8,17 +8,19 @@
 ## 🌟 Key Features
 
 - **📱 Mobile-First Web Loyalty Wallet**: Customers scan a table or counter QR code once and immediately access their personalized branded loyalty card in their mobile browser. No app store installs required.
+- **🛡️ Anti-Fraud Visit Verification & Concurrency Protection**: High-entropy 6-digit codes via `crypto.randomInt` with 3-minute TTL. Atomic compare-and-swap claims (`updateMany`) prevent duplicate stamp awards even under concurrent races.
 - **🔄 Repeatable Loyalty Cycles**: Completed cards automatically roll over into new cycles (`Cycle #2`, `Cycle #3`) with persistent `lifetimeStamps` tracking, allowing customers to keep earning stamps continuously.
-- **⏳ Auditable Reward Expiry Engine**: Milestone and completion perks enforce customizable expiration windows (`validityDays`), preventing expired perk exploitation while recording cycle-scoped redemptions.
-- **🛡️ Anti-Fraud Visit Verification**: Static QR codes only point to storefronts and never grant stamps. Stamps are awarded when counter staff verify an expiring, single-use 6-digit code or dynamic QR presented by the customer.
+- **⏳ Auditable Reward Expiry & Non-Destructive Archival**: Milestone perks enforce customizable expiration windows (`validityDays`). Card builder updates never cascade-delete customer redemptions; retired perks are preserved with `isActive: false`.
+- **🔒 Database-Level Unique Redemption Guard**: Schema constraint `@@unique([enrollmentId, rewardId, cycle])` physically prevents race condition double-redemptions.
 - **☕ Counter Terminal Perk Authorization**: Counter staff can view unlocked customer perks and authorize instant redemptions directly from the terminal with a single click.
 - **🎨 Digital Loyalty Card Builder**: Complete visual card builder with live preview. Configure 3 to 20 stamps, select custom stamp icons (coffee cup, star, gift, tag, heart), customize brand hex colors, and define milestone perks.
 - **🏢 Multi-Tenant Architecture & Strict IDOR Protection**: Strict tenant isolation scoped by `businessId` across all domain services, queries, mutations, and card configuration updates.
-- **🔐 Hardened Role-Based Access Control (RBAC)**: Enforced server-side for `PLATFORM_ADMIN`, `BUSINESS_OWNER`, `BUSINESS_MANAGER`, `BUSINESS_STAFF`, and `CUSTOMER`. Mandatory 32+ character session secret enforced in production.
+- **🔐 Hardened Live Role-Based Access Control (RBAC)**: `validateLiveBusinessAccess` queries the live database on all mutating operations to reject suspended accounts or staff members whose access was revoked, closing stale JWT claim windows.
 - **👥 Staff Management & Revocation**: Business owners can invite team members with specific roles (`MANAGER` or `STAFF`) and immediately revoke access with audit logging.
 - **📊 Real Event-Driven Analytics & Customer CSV Export**: Track verified visits, active members, repeat-customer retention rates, and export customer engagement records to CSV.
-- **🔒 Privacy Compliance & Data Rights**: Full self-service data export (GDPR/DPDP JSON download), audited account deletion requests, and live marketing consent toggles.
-- **💳 Multi-Tier Subscription Engine**: Pre-configured plans (Starter ₹299/mo, Growth ₹499/mo, Pro ₹999/mo, Enterprise) with timing-safe Razorpay webhook verification and sandbox testing switcher.
+- **🔒 Privacy Compliance & Data Rights**: Full self-service data export (GDPR/DPDP JSON download), audited account deletion requests with anonymized logs, and live marketing consent toggles in `NotificationService`.
+- **💳 Multi-Tier Subscription Engine**: Pre-configured plans (Starter ₹299/mo, Growth ₹499/mo, Pro ₹999/mo, Enterprise) with timing-safe Razorpay webhook verification, plan capacity limits (`maxStaff`, `maxMembers`), and sandbox mode separation.
+- **🏥 Production Database Health Probe**: Live `/api/health` connectivity check measuring database latency without leaking connection strings or credentials.
 - **🖨️ Printable QR Counter Signage Kit**: One-click download of high-resolution counter QR codes and ready-to-print table stand signage.
 
 ---
@@ -26,12 +28,12 @@
 ## 🏗️ Tech Stack
 
 - **Framework**: Next.js 15 (App Router, Server Components & Route Handlers)
-- **Language**: TypeScript with strict mode (`tsc --noEmit` clean)
+- **Language**: TypeScript with strict mode (`tsc --noEmit` clean, 0 errors)
 - **Styling**: Tailwind CSS with custom semantic design tokens (`#101828`, `#315EFB`, `#F7F8FC`)
 - **Database & ORM**: PostgreSQL (Production) / SQLite (Dev) with Prisma ORM and version-controlled migrations
 - **Authentication**: `jose` (HS256 stateless session JWTs) + `bcryptjs` password hashing + HttpOnly secure cookies
 - **Validation**: Zod runtime validation
-- **Testing**: Vitest unit & integration test suite (**30 passing tests across 7 test suites**)
+- **Testing**: Vitest unit & integration test suite (**46 passing tests across 12 test suites**)
 - **Icons**: Lucide React
 
 ---
@@ -60,7 +62,7 @@ cp .env.example .env
 # Push schema to local database
 npx prisma db push
 
-# Seed demo businesses, cards, staff, and transactions
+# Seed demo businesses, cards, staff, and transactions (Dev environment only)
 npm run prisma:seed
 ```
 
@@ -77,7 +79,10 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ---
 
-## 👥 Demo Credentials
+## 👥 Demo Credentials (Local Development & Staging Only)
+
+> [!NOTE]
+> In production environments (`NODE_ENV=production`), these public demo accounts are disabled by default unless explicitly permitted via `ALLOW_DEMO_CREDENTIALS=true`.
 
 | Role | Email | Password | What You Can Explore |
 | :--- | :--- | :--- | :--- |
@@ -110,29 +115,30 @@ src/
     (customer)/                  # /wallet, /explore, /account (Privacy & Data Export), /b/[slug]
     (business)/                  # /dashboard/[slug] (Overview, Verify terminal, Builder, Staff, Customers, Billing)
     (platform-admin)/            # /platform-admin (Tenant oversight & audit events)
-    api/                         # REST Route Handlers (auth, visits, loyalty, staff, privacy, subscription, webhooks)
+    api/                         # REST Route Handlers (auth, visits, loyalty, staff, privacy, subscription, health, webhooks)
   components/
     ui/                          # Button, Input, Card, Badge, Dialog, Table, Tabs
     layout/                      # Navbar, Footer, BusinessSidebar, CustomerNav
     loyalty/                     # LoyaltyCard, StampGrid, StampIcon, VerificationModal
   lib/
     auth/session.ts              # JWT session management & hardened production secret validation
-    permissions/rbac.ts          # Server-side authorization & cross-tenant isolation
+    permissions/rbac.ts          # Server-side authorization, live DB checks & cross-tenant isolation
     validation/schemas.ts        # Zod validation schemas
     qr/qrcode.ts                 # High-resolution QR code generator
     db/prisma.ts                 # Prisma Client singleton with persistence guards
   server/services/
-    loyalty.ts                   # Repeatable loyalty cycles, reward expiry & atomic redemption
-    verification.ts              # Expiring code generation, cycle rollover & counter verification
-    billing.ts                   # Plan catalog, sandbox switcher & timing-safe webhook verification
+    loyalty.ts                   # Repeatable loyalty cycles, reward expiry & non-destructive archival
+    verification.ts              # Crypto random codes, concurrency race protection & counter verification
+    billing.ts                   # Plan catalog, plan limits & timing-safe webhook verification
+    notifications.ts             # Consent-aware transactional and marketing notification dispatcher
 prisma/
   schema.prisma                  # SQLite (dev) / PostgreSQL schema
   schema.postgresql.prisma       # Dedicated PostgreSQL production schema
   migrations/                    # Version-controlled migrations
-  seed.js                        # Demo seed data script
+  seed.js                        # Demo seed data script with production guards
 tests/
-  unit/                          # Vitest automated test suite (30 tests across 7 test suites)
-docs/                            # Architecture, Database, Security, Audit, Limitations, PRD, Deployment
+  unit/                          # Vitest automated test suite (46 tests across 12 test suites)
+docs/                            # Architecture, Database, Security, Audit, Limitations, PRD, Deployment, Testing
 ```
 
 ---

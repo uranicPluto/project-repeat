@@ -14,6 +14,18 @@ export class VerificationService {
       throw new Error("Invalid loyalty enrollment");
     }
 
+    // Rate limit: max 5 code requests per minute per enrollment
+    const recentCodes = await prisma.visitVerification.count({
+      where: {
+        enrollmentId,
+        createdAt: { gte: new Date(Date.now() - 60 * 1000) },
+      },
+    });
+
+    if (recentCodes >= 5) {
+      throw new Error("Rate limit exceeded: Please wait a minute before requesting another verification code.");
+    }
+
     // Cancel any previous pending codes for this enrollment
     await prisma.visitVerification.updateMany({
       where: {
@@ -25,8 +37,8 @@ export class VerificationService {
       },
     });
 
-    // Generate random 6-digit code
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    // Generate cryptographically secure random 6-digit code
+    const code = crypto.randomInt(100000, 1000000).toString();
     const tokenHash = crypto.createHash("sha256").update(`${enrollmentId}:${code}:${Date.now()}`).digest("hex");
     const expiresAt = new Date(Date.now() + 3 * 60 * 1000); // 3 minutes TTL
 
@@ -58,11 +70,12 @@ export class VerificationService {
     const { code, businessId, staffUserId, referenceCode } = params;
 
     return prisma.$transaction(async (tx) => {
-      // Find pending verification record
+      // Find pending verification record scoped to this business
       const verification = await tx.visitVerification.findFirst({
         where: {
           code,
           status: "PENDING",
+          enrollment: { businessId },
         },
         include: {
           enrollment: {
@@ -78,11 +91,6 @@ export class VerificationService {
         throw new Error("Invalid or already used verification code");
       }
 
-      // Check business tenant isolation
-      if (verification.enrollment.businessId !== businessId) {
-        throw new Error("This verification code belongs to a different business");
-      }
-
       // Check expiration
       if (new Date() > verification.expiresAt) {
         await tx.visitVerification.update({
@@ -90,6 +98,24 @@ export class VerificationService {
           data: { status: "EXPIRED" },
         });
         throw new Error("Verification code has expired. Please ask the customer to generate a new one.");
+      }
+
+      // Atomic single-use claim: Update status from PENDING to VERIFIED
+      // Prevents concurrent duplicate stamp awards
+      const claim = await tx.visitVerification.updateMany({
+        where: {
+          id: verification.id,
+          status: "PENDING",
+        },
+        data: {
+          status: "VERIFIED",
+          verifiedByStaffId: staffUserId,
+          verifiedAt: new Date(),
+        },
+      });
+
+      if (claim.count === 0) {
+        throw new Error("Invalid or already used verification code");
       }
 
       const currentStamps = verification.enrollment.currentStamps;
@@ -117,16 +143,6 @@ export class VerificationService {
           currentStamps: newStamps,
           currentCycle: newCycle,
           lifetimeStamps,
-        },
-      });
-
-      // Mark verification code as used
-      await tx.visitVerification.update({
-        where: { id: verification.id },
-        data: {
-          status: "VERIFIED",
-          verifiedByStaffId: staffUserId,
-          verifiedAt: new Date(),
         },
       });
 
