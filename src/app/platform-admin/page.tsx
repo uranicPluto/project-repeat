@@ -9,34 +9,45 @@ import { Building2, Users, Activity, CreditCard, ShieldAlert } from "lucide-reac
 export const dynamic = "force-dynamic";
 
 export default async function PlatformAdminDashboardPage() {
-  const businessesCount = await prisma.business.count();
-  const usersCount = await prisma.user.count();
-  const visitsCount = await prisma.loyaltyTransaction.count({
-    where: { type: "STAMP_EARNED" },
-  });
-  const subscriptionsCount = await prisma.subscription.count({
-    where: { status: "ACTIVE" },
-  });
+  let businessesCount = 0;
+  let usersCount = 0;
+  let visitsCount = 0;
+  let subscriptionsCount = 0;
+  let businesses: any[] = [];
+  let auditLogs: any[] = [];
 
-  const businesses = await prisma.business.findMany({
-    include: {
-      subscription: true,
-      _count: {
-        select: { enrollments: true, memberships: true },
+  try {
+    businessesCount = await prisma.business.count();
+    usersCount = await prisma.user.count();
+    visitsCount = await prisma.loyaltyTransaction.count({
+      where: { type: "STAMP_EARNED" },
+    });
+    subscriptionsCount = await prisma.subscription.count({
+      where: { status: "ACTIVE" },
+    });
+
+    businesses = await prisma.business.findMany({
+      include: {
+        subscription: true,
+        _count: {
+          select: { enrollments: true, memberships: true },
+        },
       },
-    },
-    orderBy: { createdAt: "desc" },
-    take: 20,
-  });
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    });
 
-  const auditLogs = await prisma.auditLog.findMany({
-    include: {
-      actorUser: true,
-      business: true,
-    },
-    orderBy: { createdAt: "desc" },
-    take: 15,
-  });
+    auditLogs = await prisma.auditLog.findMany({
+      include: {
+        actorUser: true,
+        business: true,
+      },
+      orderBy: { createdAt: "desc" },
+      take: 15,
+    });
+  } catch (err) {
+    console.error("Platform admin query error:", err);
+  }
 
   return (
     <div className="space-y-8">

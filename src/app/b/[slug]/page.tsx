@@ -19,42 +19,51 @@ interface BusinessPageProps {
 export default async function BusinessPublicPage({ params }: BusinessPageProps) {
   const { slug } = await params;
 
-  const business = await prisma.business.findUnique({
-    where: { slug },
-    include: {
-      programs: {
-        where: { status: "PUBLISHED" },
-        include: {
-          rewards: {
-            where: { isActive: true },
-            orderBy: { stampsRequired: "asc" },
+  let business = null;
+  let enrollment = null;
+  let session = null;
+
+  try {
+    business = await prisma.business.findUnique({
+      where: { slug },
+      include: {
+        programs: {
+          where: { status: "PUBLISHED" },
+          include: {
+            rewards: {
+              where: { isActive: true },
+              orderBy: { stampsRequired: "asc" },
+            },
           },
         },
       },
-    },
-  });
+    });
+
+    session = await getServerSession();
+    const program = business?.programs[0];
+
+    if (session && program) {
+      enrollment = await prisma.loyaltyEnrollment.findUnique({
+        where: {
+          customerId_programId: {
+            customerId: session.userId,
+            programId: program.id,
+          },
+        },
+        include: {
+          redemptions: true,
+        },
+      });
+    }
+  } catch (err) {
+    console.error("Database query failed:", err);
+  }
 
   if (!business) {
     notFound();
   }
 
-  const session = await getServerSession();
   const program = business.programs[0];
-
-  let enrollment = null;
-  if (session && program) {
-    enrollment = await prisma.loyaltyEnrollment.findUnique({
-      where: {
-        customerId_programId: {
-          customerId: session.userId,
-          programId: program.id,
-        },
-      },
-      include: {
-        redemptions: true,
-      },
-    });
-  }
 
   return (
     <div className="flex flex-col min-h-screen bg-brand-bg">

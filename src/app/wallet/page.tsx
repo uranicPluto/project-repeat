@@ -17,7 +17,12 @@ export default async function WalletPage() {
     redirect("/login?redirect=/wallet");
   }
 
-  const cards = await LoyaltyService.getCustomerWallet(session.userId);
+  let cards: any[] = [];
+  try {
+    cards = await LoyaltyService.getCustomerWallet(session.userId);
+  } catch (err) {
+    console.error("Wallet cards fetch error:", err);
+  }
 
   return (
     <div className="flex flex-col min-h-screen bg-brand-bg">

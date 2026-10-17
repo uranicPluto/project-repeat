@@ -9,16 +9,21 @@ import { Store, ArrowRight, MapPin } from "lucide-react";
 export const dynamic = "force-dynamic";
 
 export default async function ExplorePage() {
-  const businesses = await prisma.business.findMany({
-    where: { status: "ACTIVE" },
-    include: {
-      programs: {
-        where: { status: "PUBLISHED" },
-        take: 1,
+  let businesses: any[] = [];
+  try {
+    businesses = await prisma.business.findMany({
+      where: { status: "ACTIVE" },
+      include: {
+        programs: {
+          where: { status: "PUBLISHED" },
+          take: 1,
+        },
       },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+      orderBy: { createdAt: "desc" },
+    });
+  } catch (err) {
+    console.error("Explore page database error:", err);
+  }
 
   return (
     <div className="flex flex-col min-h-screen bg-brand-bg">
