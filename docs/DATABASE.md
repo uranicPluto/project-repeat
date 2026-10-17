@@ -1,9 +1,41 @@
-# Database Architecture & Entity Design
+# Database Architecture, Entity Design & PostgreSQL Production Strategy
 
-## Database Technology
-- **Engine**: PostgreSQL
-- **ORM**: Prisma ORM
-- **Migration Strategy**: Version-controlled migrations (`prisma/migrations`)
+## Overview
+
+Project Repeat uses **PostgreSQL** as its official production database engine, accessed via **Prisma ORM** with version-controlled migrations.
+
+- **Production Engine**: PostgreSQL 15+ (Neon, Supabase, AWS RDS, or self-hosted)
+- **Local Development**: SQLite (offline zero-dependency dev) or local PostgreSQL via Docker
+- **Connection Pooling**: Supported via PgBouncer / Prisma Accelerate (`?pgbouncer=true&connection_limit=10`)
+- **Schema Location**: `prisma/schema.postgresql.prisma` (Production) & `prisma/schema.prisma`
+
+---
+
+## Production PostgreSQL Deployment Strategy
+
+### 1. Connecting a Managed PostgreSQL Instance
+In production on Vercel, Supabase, or AWS:
+1. Provision a PostgreSQL instance (e.g., Neon serverless Postgres).
+2. Set `DATABASE_URL` in your production environment variables:
+   ```env
+   # Pooled connection string (for serverless execution)
+   DATABASE_URL="postgresql://user:password@ep-repeat-pooler.us-east-2.aws.neon.tech/repeat?sslmode=require&pgbouncer=true"
+
+   # Direct connection string (for migrations)
+   DIRECT_URL="postgresql://user:password@ep-repeat.us-east-2.aws.neon.tech/repeat?sslmode=require"
+   ```
+3. Deploy migrations:
+   ```bash
+   npx prisma migrate deploy --schema=prisma/schema.postgresql.prisma
+   ```
+4. Seed initial platform admin and business templates:
+   ```bash
+   node prisma/seed.js
+   ```
+
+### 2. Dual-Schema Strategy
+- **`prisma/schema.postgresql.prisma`**: Primary production definition targeting `provider = "postgresql"`. Includes native PostgreSQL indexing, timestamp precision (`TIMESTAMP(3)`), and foreign key cascade rules.
+- **`prisma/schema.prisma`**: Configured for local SQLite development without requiring external database dependencies during offline development.
 
 ---
 
@@ -11,19 +43,19 @@
 
 ### 1. `User`
 Represents an authenticated human actor on the platform (Customer, Business Staff/Owner, or Platform Admin).
-- `id` (UUID / CUID, Primary Key)
+- `id` (CUID, Primary Key)
 - `email` (String, unique, indexed)
 - `name` (String)
 - `phone` (String, nullable)
-- `passwordHash` (String, bcrypt/argon2 hash)
+- `passwordHash` (String, bcrypt hash)
 - `role` (Enum: `PLATFORM_ADMIN`, `BUSINESS_USER`, `CUSTOMER`)
-- `status` (Enum: `ACTIVE`, `SUSPENDED`, `PENDING_VERIFICATION`)
+- `status` (Enum: `ACTIVE`, `SUSPENDED`, `PENDING`)
 - `emailVerifiedAt` (DateTime, nullable)
 - `createdAt`, `updatedAt` (DateTime)
 
 ### 2. `Business`
 Represents a participating business tenant (e.g., The Coffee House).
-- `id` (UUID, Primary Key)
+- `id` (CUID, Primary Key)
 - `name` (String)
 - `slug` (String, unique, indexed) - e.g., `/b/the-coffee-house`
 - `category` (String) - e.g., "Cafe & Coffee Shop"
@@ -32,100 +64,119 @@ Represents a participating business tenant (e.g., The Coffee House).
 - `address` (String, nullable)
 - `timeZone` (String, default "Asia/Kolkata")
 - `currency` (String, default "INR")
-- `status` (Enum: `ONBOARDING`, `ACTIVE`, `SUSPENDED`)
+- `status` (Enum: `ACTIVE`, `SUSPENDED`)
 - `primaryColor` (String, default "#315EFB")
 - `secondaryColor` (String, default "#101828")
 - `createdAt`, `updatedAt` (DateTime)
 
 ### 3. `BusinessMembership`
 Junction table linking Users to Businesses with specific scoped roles.
-- `id` (UUID, Primary Key)
+- `id` (CUID, Primary Key)
 - `userId` (FK -> User.id)
 - `businessId` (FK -> Business.id)
 - `role` (Enum: `OWNER`, `MANAGER`, `STAFF`)
 - `createdAt`, `updatedAt` (DateTime)
 - *Unique Constraint*: `[userId, businessId]`
 
-### 4. `LoyaltyProgram` & `LoyaltyProgramVersion`
+### 4. `LoyaltyProgram`
 Configurable loyalty programs per business.
-- `id` (UUID, Primary Key)
+- `id` (CUID, Primary Key)
 - `businessId` (FK -> Business.id)
-- `name` (String) - e.g., "Coffee House Regulars"
+- `name` (String) - e.g., "Artisan Regulars Club"
 - `cardTitle` (String)
-- `totalStamps` (Int) - e.g., 5 or 10
+- `totalStamps` (Int, default 5)
 - `stampIcon` (String, default "cup")
 - `status` (Enum: `DRAFT`, `PUBLISHED`, `ARCHIVED`)
 - `version` (Int, default 1)
-- `terms` (String)
+- `terms` (String, nullable)
 - `createdAt`, `updatedAt` (DateTime)
 
 ### 5. `Reward`
 Milestone rewards defined within a program.
-- `id` (UUID, Primary Key)
+- `id` (CUID, Primary Key)
 - `programId` (FK -> LoyaltyProgram.id)
-- `stampsRequired` (Int) - e.g., 5 stamps for a free coffee
-- `title` (String) - "Free Any Beverage"
-- `description` (String)
+- `stampsRequired` (Int) - e.g., 3 stamps for pastry discount, 5 stamps for free coffee
+- `title` (String) - "Complimentary Beverage"
+- `description` (String, nullable)
 - `rewardType` (Enum: `FREE_ITEM`, `DISCOUNT_PERCENT`, `DISCOUNT_FIXED`)
-- `discountValue` (Decimal / Int minor units, nullable)
-- `validityDays` (Int, default 30)
+- `discountValue` (Int, minor units or percentage points)
+- `validityDays` (Int, default 30) - number of days reward is valid after unlocking
 - `isActive` (Boolean, default true)
 
-### 6. `LoyaltyEnrollment`
+### 6. `LoyaltyEnrollment` (Repeatable Cycles & Stamp Ledger)
 A customer's active loyalty card with a specific business and program.
-- `id` (UUID, Primary Key)
+- `id` (CUID, Primary Key)
 - `customerId` (FK -> User.id)
 - `businessId` (FK -> Business.id)
 - `programId` (FK -> LoyaltyProgram.id)
 - `status` (Enum: `ACTIVE`, `PAUSED`, `CLOSED`)
+- `currentStamps` (Int, default 0) - stamps accumulated in the current cycle
+- `currentCycle` (Int, default 1) - current iteration of the card (rolls over upon completion)
+- `lifetimeStamps` (Int, default 0) - immutable cumulative stamps earned across all cycles
 - `enrolledAt` (DateTime)
+- `updatedAt` (DateTime)
 - *Unique Constraint*: `[customerId, programId]`
 
 ### 7. `LoyaltyTransaction` (Immutable Ledger)
 The source of truth for all stamp awards and adjustments.
-- `id` (UUID, Primary Key)
+- `id` (CUID, Primary Key)
 - `enrollmentId` (FK -> LoyaltyEnrollment.id)
-- `type` (Enum: `STAMP_EARNED`, `REWARD_REDEEMED`, `STAMP_EXPIRED`, `ADMIN_ADJUSTMENT`)
-- `stampsDelta` (Int) - positive for stamps earned (+1), negative for resets
-- `referenceCode` (String, nullable) - receipt or verification reference
+- `type` (Enum: `STAMP_EARNED`, `REWARD_REDEEMED`, `CYCLE_COMPLETED`, `ADMIN_ADJUSTMENT`)
+- `stampsDelta` (Int) - e.g. +1 for visit, 0 for redemption
+- `balanceAfter` (Int)
+- `referenceCode` (String, nullable) - verification receipt code
 - `staffUserId` (FK -> User.id, nullable)
 - `createdAt` (DateTime)
 
 ### 8. `VisitVerification`
-Temporary and historic visit verification tokens to prevent fraud.
-- `id` (UUID, Primary Key)
+Expiring 6-digit verification codes to prevent QR screenshot and duplication fraud.
+- `id` (CUID, Primary Key)
 - `enrollmentId` (FK -> LoyaltyEnrollment.id)
 - `tokenHash` (String, unique)
 - `code` (String) - 6-digit expiring code
-- `expiresAt` (DateTime)
+- `expiresAt` (DateTime) - 3-minute TTL
 - `status` (Enum: `PENDING`, `VERIFIED`, `EXPIRED`, `CANCELLED`)
 - `verifiedByStaffId` (FK -> User.id, nullable)
 - `verifiedAt` (DateTime, nullable)
 
 ### 9. `RewardRedemption`
-Atomic record of a redeemed reward milestone.
-- `id` (UUID, Primary Key)
+Atomic, auditable record of a redeemed reward milestone.
+- `id` (CUID, Primary Key)
 - `enrollmentId` (FK -> LoyaltyEnrollment.id)
 - `rewardId` (FK -> Reward.id)
 - `staffUserId` (FK -> User.id)
-- `status` (Enum: `REDEEMED`, `CANCELLED`)
+- `cycle` (Int, default 1) - associates redemption with specific card cycle
+- `status` (Enum: `REDEEMED`, `CANCELLED`, `EXPIRED`)
+- `redemptionCode` (String, nullable) - unique redemption reference
 - `redeemedAt` (DateTime)
+- `expiresAt` (DateTime, nullable) - expiration deadline based on `Reward.validityDays`
 
-### 10. `Subscription` & `SubscriptionPlan`
-Multi-tier billing system.
-- `planId` (Enum: `STARTER`, `GROWTH`, `PRO`, `ENTERPRISE`)
+### 10. `Subscription`
+Business subscription billing tracking.
+- `id` (CUID, Primary Key)
 - `businessId` (FK -> Business.id, unique)
+- `planId` (Enum: `STARTER`, `GROWTH`, `PRO`, `ENTERPRISE`)
 - `status` (Enum: `TRIALING`, `ACTIVE`, `PAST_DUE`, `CANCELLED`)
 - `currentPeriodStart`, `currentPeriodEnd` (DateTime)
 - `paymentProvider` (String) - e.g. "razorpay" or "mock"
 - `providerSubscriptionId` (String, nullable)
 
 ### 11. `AuditLog`
-High-security audit event ledger.
-- `id` (UUID, Primary Key)
+Immutable operational audit ledger.
+- `id` (CUID, Primary Key)
 - `actorUserId` (FK -> User.id, nullable)
 - `businessId` (FK -> Business.id, nullable)
-- `action` (String) - e.g., "STAFF_INVITED", "PROGRAM_PUBLISHED", "REWARD_REDEEMED"
-- `details` (Json)
-- `ipAddress`, `userAgent` (String, nullable)
+- `action` (String) - e.g., "STAFF_INVITED", "STAFF_REVOKED", "VISIT_VERIFIED", "REWARD_REDEEMED"
+- `details` (String / JSON stringified)
+- `ipAddress` (String, nullable)
 - `createdAt` (DateTime)
+
+### 12. `CustomerConsent`
+Privacy and marketing consent tracker (DPDP / GDPR compliance).
+- `id` (CUID, Primary Key)
+- `customerId` (FK -> User.id)
+- `businessId` (FK -> Business.id)
+- `marketingEmail` (Boolean, default false)
+- `marketingSms` (Boolean, default false)
+- `updatedAt` (DateTime)
+- *Unique Constraint*: `[customerId, businessId]`

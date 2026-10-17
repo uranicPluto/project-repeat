@@ -3,9 +3,23 @@ import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { NextRequest } from "next/server";
 
-const SECRET_KEY = new TextEncoder().encode(
-  process.env.SESSION_SECRET || "dev-project-repeat-super-secure-session-secret-key-32-chars-min"
-);
+export function getSessionSecretKey(): Uint8Array {
+  const secret = process.env.SESSION_SECRET;
+  if (!secret) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(
+        "FATAL SECURITY CONFIGURATION: SESSION_SECRET environment variable is missing in production. Please set a secure 32+ character key."
+      );
+    }
+    return new TextEncoder().encode("dev-project-repeat-super-secure-session-secret-key-32-chars-min");
+  }
+  if (secret.length < 32 && process.env.NODE_ENV === "production") {
+    throw new Error(
+      "FATAL SECURITY CONFIGURATION: SESSION_SECRET must be at least 32 characters long in production."
+    );
+  }
+  return new TextEncoder().encode(secret);
+}
 
 export const SESSION_COOKIE_NAME = "project_repeat_session";
 
@@ -37,12 +51,12 @@ export async function createSessionToken(payload: SessionPayload): Promise<strin
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime("7d")
-    .sign(SECRET_KEY);
+    .sign(getSessionSecretKey());
 }
 
 export async function verifySessionToken(token: string): Promise<SessionPayload | null> {
   try {
-    const { payload } = await jwtVerify(token, SECRET_KEY, {
+    const { payload } = await jwtVerify(token, getSessionSecretKey(), {
       algorithms: ["HS256"],
     });
     return payload as unknown as SessionPayload;

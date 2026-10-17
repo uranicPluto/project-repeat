@@ -28,6 +28,8 @@ export interface ProgramProgress {
     stampsRequired: number;
     isRedeemed: boolean;
   }[];
+  currentCycle?: number;
+  lifetimeStamps?: number;
   lastVisitAt: Date | null;
 }
 
@@ -61,6 +63,8 @@ export class LoyaltyService {
         businessId: program.businessId,
         programId,
         currentStamps: 0,
+        currentCycle: 1,
+        lifetimeStamps: 0,
       },
     });
   }
@@ -93,9 +97,10 @@ export class LoyaltyService {
       const { program, business } = enrollment;
       const currentStamps = enrollment.currentStamps;
       const totalStamps = program.totalStamps;
+      const currentCycle = enrollment.currentCycle || 1;
       const progressPercent = Math.min(100, Math.round((currentStamps / totalStamps) * 100));
 
-      // Calculate next unearned reward
+      // Calculate next unearned reward in current cycle
       const nextRewardDef = program.rewards.find((r) => r.stampsRequired > currentStamps);
       const nextReward = nextRewardDef
         ? {
@@ -106,15 +111,20 @@ export class LoyaltyService {
           }
         : null;
 
-      // Available & unlocked rewards
-      const redeemedRewardIds = new Set(enrollment.redemptions.map((r) => r.rewardId));
+      // Available & unlocked rewards scoped to current cycle
+      const redeemedRewardIdsInCycle = new Set(
+        enrollment.redemptions
+          .filter((r) => r.cycle === currentCycle && r.status === "REDEEMED")
+          .map((r) => r.rewardId)
+      );
+
       const availableRewards = program.rewards.map((r) => ({
         id: r.id,
         title: r.title,
         description: r.description,
         rewardType: r.rewardType,
         stampsRequired: r.stampsRequired,
-        isRedeemed: redeemedRewardIds.has(r.id),
+        isRedeemed: redeemedRewardIdsInCycle.has(r.id),
       }));
 
       const lastVisitAt = enrollment.transactions[0]?.createdAt ?? null;
@@ -132,6 +142,8 @@ export class LoyaltyService {
         stampIcon: program.stampIcon,
         totalStamps,
         currentStamps,
+        currentCycle,
+        lifetimeStamps: enrollment.lifetimeStamps || currentStamps,
         progressPercent,
         nextReward,
         availableRewards,
@@ -141,7 +153,7 @@ export class LoyaltyService {
   }
 
   /**
-   * Redeem a milestone reward with atomic checks
+   * Redeem a milestone reward with atomic checks, cycle tracking, and expiry enforcement
    */
   static async redeemReward(params: {
     enrollmentId: string;
@@ -180,26 +192,55 @@ export class LoyaltyService {
         );
       }
 
-      // Check if already redeemed
+      const currentCycle = enrollment.currentCycle || 1;
+
+      // Check if already redeemed in this specific cycle
       const existingRedemption = await tx.rewardRedemption.findFirst({
         where: {
           enrollmentId,
           rewardId,
+          cycle: currentCycle,
           status: "REDEEMED",
         },
       });
 
       if (existingRedemption) {
-        throw new Error("This reward milestone has already been redeemed for this card");
+        throw new Error(`This reward milestone has already been redeemed for Cycle ${currentCycle}`);
       }
 
-      // Record atomic redemption
+      // Reward expiration check: verify validityDays from when qualifying stamps were achieved
+      const qualifyingTx = await tx.loyaltyTransaction.findFirst({
+        where: {
+          enrollmentId,
+          type: "STAMP_EARNED",
+          balanceAfter: { gte: reward.stampsRequired },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+
+      const daysSinceEarned = qualifyingTx
+        ? (Date.now() - qualifyingTx.createdAt.getTime()) / (1000 * 60 * 60 * 24)
+        : 0;
+
+      if (reward.validityDays && daysSinceEarned > reward.validityDays) {
+        throw new Error(
+          `Reward expired: Unlocked on ${qualifyingTx?.createdAt.toLocaleDateString()}, but valid for ${reward.validityDays} days.`
+        );
+      }
+
+      const redemptionCode = `RDM-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+      const expiresAt = new Date(Date.now() + (reward.validityDays || 30) * 24 * 60 * 60 * 1000);
+
+      // Record atomic redemption with staff attribution & cycle
       const redemption = await tx.rewardRedemption.create({
         data: {
           enrollmentId,
           rewardId,
           staffUserId,
+          cycle: currentCycle,
           status: "REDEEMED",
+          redemptionCode,
+          expiresAt,
         },
       });
 
@@ -210,7 +251,7 @@ export class LoyaltyService {
           type: "REWARD_REDEEMED",
           stampsDelta: 0,
           balanceAfter: enrollment.currentStamps,
-          referenceCode: `REDEEM-${reward.title.replace(/\s+/g, "").toUpperCase()}`,
+          referenceCode: redemptionCode,
           staffUserId,
         },
       });
@@ -222,9 +263,12 @@ export class LoyaltyService {
           businessId,
           action: "REWARD_REDEEMED",
           details: JSON.stringify({
+            redemptionId: redemption.id,
+            redemptionCode,
             enrollmentId,
             rewardId,
             rewardTitle: reward.title,
+            cycle: currentCycle,
             customerUserId: enrollment.customerId,
           }),
         },

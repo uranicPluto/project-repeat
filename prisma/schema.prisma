@@ -109,14 +109,16 @@ model Reward {
 }
 
 model LoyaltyEnrollment {
-  id            String   @id @default(cuid())
-  customerId    String
-  businessId    String
-  programId     String
-  status        String   @default("ACTIVE") // ACTIVE, PAUSED, CLOSED
-  currentStamps Int      @default(0)
-  enrolledAt    DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id             String   @id @default(cuid())
+  customerId     String
+  businessId     String
+  programId      String
+  status         String   @default("ACTIVE") // ACTIVE, PAUSED, CLOSED
+  currentStamps  Int      @default(0)
+  currentCycle   Int      @default(1)
+  lifetimeStamps Int      @default(0)
+  enrolledAt     DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   customer      User     @relation(fields: [customerId], references: [id], onDelete: Cascade)
   business      Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
@@ -165,12 +167,15 @@ model VisitVerification {
 }
 
 model RewardRedemption {
-  id           String   @id @default(cuid())
-  enrollmentId String
-  rewardId     String
-  staffUserId  String
-  status       String   @default("REDEEMED") // REDEEMED, CANCELLED
-  redeemedAt   DateTime @default(now())
+  id             String    @id @default(cuid())
+  enrollmentId   String
+  rewardId       String
+  staffUserId    String
+  cycle          Int       @default(1)
+  status         String    @default("REDEEMED") // REDEEMED, CANCELLED, EXPIRED
+  redemptionCode String?
+  redeemedAt     DateTime  @default(now())
+  expiresAt      DateTime?
 
   enrollment   LoyaltyEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
   reward       Reward            @relation(fields: [rewardId], references: [id], onDelete: Cascade)

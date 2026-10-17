@@ -94,13 +94,29 @@ export class VerificationService {
 
       const currentStamps = verification.enrollment.currentStamps;
       const totalStamps = verification.enrollment.program.totalStamps;
-      const newStamps = currentStamps + 1;
+      const currentCycle = verification.enrollment.currentCycle || 1;
+      const lifetimeStamps = (verification.enrollment.lifetimeStamps || 0) + 1;
 
-      // Update enrollment counter
+      let newStamps: number;
+      let newCycle = currentCycle;
+      let rolledOver = false;
+
+      if (currentStamps >= totalStamps) {
+        // Customer already completed previous card! Rolling over into a new repeatable cycle
+        newCycle = currentCycle + 1;
+        newStamps = 1;
+        rolledOver = true;
+      } else {
+        newStamps = currentStamps + 1;
+      }
+
+      // Update enrollment counter and cycle
       const updatedEnrollment = await tx.loyaltyEnrollment.update({
         where: { id: verification.enrollmentId },
         data: {
           currentStamps: newStamps,
+          currentCycle: newCycle,
+          lifetimeStamps,
         },
       });
 
@@ -113,6 +129,20 @@ export class VerificationService {
           verifiedAt: new Date(),
         },
       });
+
+      // If rolled over, record cycle completion in transaction ledger
+      if (rolledOver) {
+        await tx.loyaltyTransaction.create({
+          data: {
+            enrollmentId: verification.enrollmentId,
+            type: "CYCLE_COMPLETED",
+            stampsDelta: 0,
+            balanceAfter: 0,
+            referenceCode: `CYCLE-${currentCycle}-COMPLETE`,
+            staffUserId,
+          },
+        });
+      }
 
       // Append to immutable ledger
       const transaction = await tx.loyaltyTransaction.create({
@@ -138,16 +168,51 @@ export class VerificationService {
             previousStamps: currentStamps,
             newStamps,
             totalStamps,
+            cycle: newCycle,
+            rolledOver,
+            lifetimeStamps,
           }),
         },
       });
 
+      // Fetch unlocked rewards in this program
+      const unlockedRewards = await tx.reward.findMany({
+        where: {
+          programId: verification.enrollment.programId,
+          stampsRequired: { lte: newStamps },
+          isActive: true,
+        },
+        orderBy: { stampsRequired: "asc" },
+      });
+
+      const existingRedemptions = await tx.rewardRedemption.findMany({
+        where: {
+          enrollmentId: verification.enrollmentId,
+          cycle: newCycle,
+          status: "REDEEMED",
+        },
+      });
+      const redeemedSet = new Set(existingRedemptions.map((r) => r.rewardId));
+
+      const redeemableRewards = unlockedRewards.map((r) => ({
+        id: r.id,
+        title: r.title,
+        stampsRequired: r.stampsRequired,
+        rewardType: r.rewardType,
+        isRedeemed: redeemedSet.has(r.id),
+      }));
+
       return {
         success: true,
         transactionId: transaction.id,
+        enrollmentId: verification.enrollmentId,
         currentStamps: updatedEnrollment.currentStamps,
+        currentCycle: updatedEnrollment.currentCycle,
+        lifetimeStamps: updatedEnrollment.lifetimeStamps,
         totalStamps,
         hasReachedCardCompletion: newStamps >= totalStamps,
+        rolledOver,
+        redeemableRewards,
       };
     });
   }

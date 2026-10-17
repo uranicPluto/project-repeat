@@ -84,3 +84,64 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error.message || "Failed to add staff" }, { status: 400 });
   }
 }
+
+const removeStaffSchema = z.object({
+  businessId: z.string(),
+  membershipId: z.string(),
+});
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const session = await getRequestSession(req);
+    const body = await req.json();
+    const { businessId, membershipId } = removeStaffSchema.parse(body);
+
+    // Only OWNER can remove staff
+    requireBusinessAccess(session, businessId, ["OWNER"]);
+
+    const targetMembership = await prisma.businessMembership.findUnique({
+      where: { id: membershipId },
+      include: { user: true },
+    });
+
+    if (!targetMembership || targetMembership.businessId !== businessId) {
+      return NextResponse.json({ error: "Staff membership not found for this business" }, { status: 404 });
+    }
+
+    // Owner cannot delete themselves
+    if (targetMembership.userId === session!.userId) {
+      return NextResponse.json({ error: "You cannot revoke your own owner membership" }, { status: 400 });
+    }
+
+    await prisma.businessMembership.delete({
+      where: { id: membershipId },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        actorUserId: session!.userId,
+        businessId,
+        action: "STAFF_REVOKED",
+        details: JSON.stringify({
+          revokedMembershipId: membershipId,
+          revokedUserId: targetMembership.userId,
+          revokedEmail: targetMembership.user.email,
+        }),
+      },
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: "Staff member access revoked successfully",
+    });
+  } catch (error: any) {
+    if (error.name === "AuthorizationError") {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode });
+    }
+    if (error.name === "ZodError") {
+      return NextResponse.json({ error: error.errors[0]?.message || "Validation failed" }, { status: 400 });
+    }
+    return NextResponse.json({ error: error.message || "Failed to revoke staff" }, { status: 400 });
+  }
+}
+

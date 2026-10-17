@@ -83,6 +83,36 @@ export function StaffManagementClient({
     }
   };
 
+  const [revokingId, setRevokingId] = React.useState<string | null>(null);
+
+  const handleRevokeStaff = async (membershipId: string, memberName: string) => {
+    if (!confirm(`Are you sure you want to revoke counter access for ${memberName}?`)) {
+      return;
+    }
+
+    setRevokingId(membershipId);
+    setError(null);
+
+    try {
+      const res = await fetch("/api/business/staff", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ businessId, membershipId }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to revoke staff access");
+      }
+
+      setStaff((prev) => prev.filter((m) => m.id !== membershipId));
+    } catch (err: any) {
+      setError(err.message || "An error occurred");
+    } finally {
+      setRevokingId(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between pb-6 border-b border-brand-border/60 gap-4">
@@ -116,6 +146,7 @@ export function StaffManagementClient({
                 <TableHead>Email</TableHead>
                 <TableHead>Role</TableHead>
                 <TableHead>Added On</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -129,6 +160,21 @@ export function StaffManagementClient({
                     </Badge>
                   </TableCell>
                   <TableCell className="text-xs text-brand-muted">{formatDate(m.createdAt)}</TableCell>
+                  <TableCell className="text-right">
+                    {m.role !== "OWNER" ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50 text-xs h-8 px-2"
+                        isLoading={revokingId === m.id}
+                        onClick={() => handleRevokeStaff(m.id, m.name)}
+                      >
+                        Revoke Access
+                      </Button>
+                    ) : (
+                      <span className="text-xs text-brand-muted italic">Owner</span>
+                    )}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

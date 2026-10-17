@@ -26,6 +26,14 @@ export async function POST(req: NextRequest) {
     const updatedProgram = await prisma.$transaction(async (tx) => {
       let program;
       if (programId) {
+        const existingProgram = await tx.loyaltyProgram.findUnique({
+          where: { id: programId },
+        });
+
+        if (!existingProgram || existingProgram.businessId !== businessId) {
+          throw new Error("Unauthorized: Target loyalty program does not belong to this business");
+        }
+
         program = await tx.loyaltyProgram.update({
           where: { id: programId },
           data: {

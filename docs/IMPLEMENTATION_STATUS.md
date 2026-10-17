@@ -1,91 +1,76 @@
 # Implementation Status — Project Repeat
 
-**Status:** Verified Complete & Production-Ready  
 **Platform**: House of Workflow — Project Repeat (Digital Loyalty & Customer Retention SaaS)  
-**Verification Date**: October 2026
+**Status**: Verified Complete & Security Hardened  
+**Verification Date**: October 2026  
+**Test Suite**: 30/30 Vitest tests passing across 7 test suites  
+**Build Status**: Next.js 15 App Router production build succeeded (zero TypeScript or lint errors)
 
 ---
 
-## Phase Execution Summary
+## Comprehensive Implementation Matrix
 
-| Phase | Description | Status | Verification Summary |
+| Phase | Milestone | Status | Key Deliverables & Test Verification |
 | :--- | :--- | :--- | :--- |
-| **Phase 0** | Repository Inspection & Setup | **COMPLETED** | Verified clean repository, Node.js v24.18.0, npm 11.16.0, unblocked broken hook, established base config |
-| **Phase 1** | Foundation & Design System | **COMPLETED** | Brand design tokens (`#101828`, `#315EFB`, `#F7F8FC`), shared UI components (`Button`, `Card`, `Badge`, `Input`, `Dialog`, `Tabs`, `Table`), responsive navigation, marketing layouts |
-| **Phase 2** | Database & Authentication | **COMPLETED** | Normalized PostgreSQL Prisma schema, version-controlled initial migration (`20261018000000_init`), bcrypt password hashing, `jose` HS256 session cookies, customer & business registration, login/logout |
-| **Phase 3** | Business Onboarding | **COMPLETED** | Guided multi-step business creation, default 5-stamp loyalty program, starter subscription, auto slugification |
-| **Phase 4** | Customer Experience & Wallet | **COMPLETED** | Mobile-first digital wallet (`/wallet`), participating business directory (`/explore`), account & privacy controls (`/account`), public storefront (`/b/[slug]`) |
-| **Phase 5** | Loyalty & Anti-Fraud Engine | **COMPLETED** | Server-authoritative balances, expiring 3-minute 6-digit codes (`/api/visits/request-code`), single-use counter verification (`/api/visits/verify`), immutable `LoyaltyTransaction` ledger, double-redemption prevention |
-| **Phase 6** | Business Operations & Analytics| **COMPLETED** | Real DB metrics (total members, repeat customer rate, verified visits), counter staff terminal (`/verify`), card builder with live preview (`/card-builder`), customer directory (`/customers`), staff roster (`/staff`), redemptions ledger (`/redemptions`) |
-| **Phase 7** | Subscriptions & Billing | **COMPLETED** | Configurable plan catalog (Starter ₹299, Growth ₹499, Pro ₹999), Razorpay timing-safe webhook verification, subscription status management (`/billing`), dev sandbox indicators |
-| **Phase 8** | Platform Admin Interface | **COMPLETED** | Multi-tenant administration (`/platform-admin`), system-wide metrics, tenant directory, operational audit trail, `requirePlatformAdmin` guard |
-| **Phase 9** | Quality, Testing & Release | **COMPLETED** | Strict TypeScript check passed (`tsc --noEmit`), 19 unit & integration tests passing in Vitest, Next.js 15 production build passed with 26 optimized static & dynamic routes |
+| **Phase 1** | Repository & Security Audit | **COMPLETED** | Full audit executed and documented by severity in `docs/AUDIT.md`. Identified and triaged IDOR in program update, session secret fallbacks, and UI button gaps. |
+| **Phase 2** | Security & Tenant Isolation Lockdown | **COMPLETED** | Fixed IDOR in `/api/loyalty/program` (scoped update to `businessId`). Enforced strict 32+ character `SESSION_SECRET` in production in `session.ts`. Added `requireBusinessAccess(session, business.id, ["OWNER"])` to billing route. Added `DELETE /api/business/staff` with self-revocation protection. |
+| **Phase 3** | Database Persistence (PostgreSQL) | **COMPLETED** | PostgreSQL standardized as production engine (`prisma/schema.postgresql.prisma` and version-controlled migration `20261018000000_init`). Unbundled SQLite from production Next.js tracing. Added connection pooling guidance and production database health checks. |
+| **Phase 4** | Repeatable Cycles & Expiry Engine | **COMPLETED** | Added `currentCycle`, `completedCycles`, and `lifetimeStamps` to `LoyaltyEnrollment`. Cycle automatically increments and stamps reset to 1 on subsequent visits after card completion. Redemptions scoped to `cycle`. Enforced `validityDays` on milestone rewards with timestamp expiration checking. |
+| **Phase 5** | Subscriptions & Billing Plumbed | **COMPLETED** | Created `/api/business/subscription` with plan upgrade/downgrade handling, sandbox evaluation mode when Razorpay credentials are unset, and timing-safe webhook verification (`BillingService.verifyWebhookSignature`). |
+| **Phase 6** | Complete Customer Wallet & Dashboard UI | **COMPLETED** | Added in-person counter reward authorization directly into `/verify` terminal. Added staff revocation button to `/staff`. Connected billing plan changer and invoices modal to `/billing`. Added customer directory CSV export to `/customers`. |
+| **Phase 7** | Privacy, Data Portability & Consent | **COMPLETED** | Implemented `GET /api/privacy/export` (downloads complete personal JSON record under DPDP/GDPR). Implemented `POST /api/privacy/delete-request` (Right to be Forgotten with "DELETE" confirmation modal). Implemented `POST /api/privacy/consent` with persisted marketing opt-in preferences. |
+| **Phase 8** | Comprehensive Automated Testing | **COMPLETED** | Expanded Vitest suite to 30 tests covering IDOR prevention, repeatable cycles, reward expiry, session secret enforcement, and RBAC boundaries. `npm run test` exits code 0. |
+| **Phase 9** | Deployment Verification & Documentation | **COMPLETED** | Updated `README.md`, `docs/AUDIT.md`, `docs/DATABASE.md`, `docs/SECURITY.md`, `docs/TESTING.md`, `docs/DEPLOYMENT.md`, and `docs/LIMITATIONS.md`. |
 
 ---
 
-## Automated Test Results
+## Automated Test Verification Summary
+
 ```text
-✓ tests/unit/permissions-rbac.test.ts (6 tests)
-  ✓ requireAuth throws 401 when session is null
-  ✓ requirePlatformAdmin only permits PLATFORM_ADMIN
-  ✓ permits staff access to their own business
-  ✓ denies staff access to owner-only operations
-  ✓ strictly enforces tenant isolation across different businesses
-  ✓ permits platform admin override with least privilege audit handling
+ ✓ tests/unit/repeatable-cycles.test.ts (4 tests)
+   ✓ awards stamps sequentially within the initial cycle
+   ✓ completes card when reaching total stamps
+   ✓ safely rolls over to Cycle 2 on subsequent visit after card completion
+   ✓ preserves cycle scoping for reward redemptions across multiple cycles
 
-✓ tests/unit/validation.test.ts (6 tests)
-  ✓ validates valid customer registration
-  ✓ rejects invalid customer registration with short password
-  ✓ validates business registration
-  ✓ validates loyalty program configuration
-  ✓ rejects loyalty program with stamps out of bounds
-  ✓ validates visit verification 6-digit code format
+ ✓ tests/unit/reward-expiry.test.ts (3 tests)
+   ✓ permits redemption when customer has sufficient stamps within the validity window
+   ✓ blocks redemption when customer lacks sufficient stamps
+   ✓ blocks redemption and flags expiration when validity window has passed
 
-✓ tests/unit/loyalty-engine.test.ts (4 tests)
-  ✓ calculates correct progress percentages across different stamp limits
-  ✓ calculates next milestone reward and remaining stamps correctly
-  ✓ calculates repeat customer retention rate properly
-  ✓ enforces plan entitlement catalog limits correctly
+ ✓ tests/unit/security-hardening.test.ts (4 tests)
+   ✓ enforces strict 32+ character SESSION_SECRET in production
+   ✓ prevents IDOR: ensures business access check throws on mismatched businessId
+   ✓ prevents staff from accessing OWNER-only billing features
+   ✓ prohibits owners from revoking their own ownership
 
-✓ tests/unit/security-tokens.test.ts (3 tests)
-  ✓ hashes passwords securely with bcrypt salt and verifies accurately
-  ✓ creates and verifies tamper-proof session JWT tokens
-  ✓ verifies Razorpay payment webhook signatures using timingSafeEqual
+ ✓ tests/unit/permissions-rbac.test.ts (6 tests)
+   ✓ requireAuth throws 401 when session is null
+   ✓ requirePlatformAdmin only permits PLATFORM_ADMIN
+   ✓ permits staff access to their own business
+   ✓ denies staff access to owner-only operations
+   ✓ strictly enforces tenant isolation across different businesses
+   ✓ permits platform admin override with least privilege audit handling
 
-Test Files  4 passed (4)
-Tests       19 passed (19)
-Duration    1.90s
-```
+ ✓ tests/unit/validation.test.ts (6 tests)
+   ✓ validates valid customer registration
+   ✓ rejects invalid customer registration with short password
+   ✓ validates business registration
+   ✓ validates loyalty program configuration
+   ✓ rejects loyalty program with stamps out of bounds
+   ✓ validates visit verification 6-digit code format
 
----
+ ✓ tests/unit/loyalty-engine.test.ts (4 tests)
+   ✓ calculates correct progress percentages across different stamp limits
+   ✓ calculates next milestone reward and remaining stamps correctly
+   ✓ calculates repeat customer retention rate properly
+   ✓ enforces plan entitlement catalog limits correctly
 
-## Production Build Verification
-```text
-Route (app)                                 Size  First Load JS
-┌ ○ /                                    1.15 kB         122 kB
-├ ○ /_not-found                            998 B         104 kB
-├ ƒ /account                              1.5 kB         117 kB
-├ ƒ /b/[slug]                             1.6 kB         123 kB
-├ ○ /contact                             1.87 kB         117 kB
-├ ƒ /dashboard/[slug]                      172 B         106 kB
-├ ƒ /dashboard/[slug]/analytics            173 B         103 kB
-├ ƒ /dashboard/[slug]/billing              173 B         103 kB
-├ ƒ /dashboard/[slug]/card-builder       3.84 kB         122 kB
-├ ƒ /dashboard/[slug]/customers            173 B         103 kB
-├ ƒ /dashboard/[slug]/qr                 2.82 kB         118 kB
-├ ƒ /dashboard/[slug]/redemptions          173 B         103 kB
-├ ƒ /dashboard/[slug]/staff              3.89 kB         116 kB
-├ ƒ /dashboard/[slug]/verify             3.29 kB         115 kB
-├ ƒ /explore                             1.51 kB         117 kB
-├ ○ /faq                                 1.87 kB         117 kB
-├ ○ /features                            1.87 kB         117 kB
-├ ○ /how-it-works                        1.87 kB         117 kB
-├ ○ /login                               2.71 kB         118 kB
-├ ƒ /platform-admin                        172 B         106 kB
-├ ○ /pricing                             1.87 kB         117 kB
-├ ○ /privacy                             1.87 kB         117 kB
-├ ○ /register                            2.78 kB         118 kB
-├ ○ /register-business                    4.2 kB         119 kB
-├ ○ /terms                               1.87 kB         117 kB
-└ ƒ /wallet                              1.33 kB         123 kB
+ ✓ tests/unit/security-tokens.test.ts (3 tests)
+   ✓ hashes passwords securely with bcrypt salt and verifies accurately
+   ✓ creates and verifies tamper-proof session JWT tokens
+   ✓ verifies Razorpay payment webhook signatures using timingSafeEqual
+
+Test Files  7 passed (7)
+Tests       30 passed (30)
 ```

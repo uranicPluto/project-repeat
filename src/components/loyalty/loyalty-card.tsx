@@ -29,6 +29,8 @@ export interface LoyaltyCardProps {
     stampsRequired: number;
     isRedeemed?: boolean;
   }[];
+  currentCycle?: number;
+  lifetimeStamps?: number;
   isPreview?: boolean;
   onRefresh?: () => void;
 }
@@ -43,6 +45,8 @@ export function LoyaltyCard({
   stampIcon = "cup",
   totalStamps = 5,
   currentStamps = 0,
+  currentCycle = 1,
+  lifetimeStamps = 0,
   nextReward,
   rewards = [],
   isPreview = false,
@@ -69,9 +73,16 @@ export function LoyaltyCard({
 
         <div className="flex items-center justify-between pb-4 border-b border-white/10">
           <div>
-            <span className="text-xs uppercase tracking-widest text-white/70 font-semibold">
-              Digital Loyalty Card
-            </span>
+            <div className="flex items-center space-x-2">
+              <span className="text-xs uppercase tracking-widest text-white/70 font-semibold">
+                Digital Loyalty Card
+              </span>
+              {currentCycle > 1 && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-brand-blue text-white shadow-sm">
+                  Cycle #{currentCycle}
+                </span>
+              )}
+            </div>
             <h3 className="text-xl font-bold tracking-tight text-white mt-0.5">{businessName}</h3>
           </div>
           <div

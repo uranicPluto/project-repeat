@@ -82,6 +82,8 @@ export default async function WalletPage() {
                     stampIcon={card.stampIcon}
                     totalStamps={card.totalStamps}
                     currentStamps={card.currentStamps}
+                    currentCycle={card.currentCycle || 1}
+                    lifetimeStamps={card.lifetimeStamps || 0}
                     nextReward={card.nextReward}
                     rewards={card.availableRewards}
                   />

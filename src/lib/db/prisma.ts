@@ -13,10 +13,15 @@ function getDatasourceUrl(): string | undefined {
     return envUrl;
   }
 
-  // Look for dev.db in standard local and serverless bundled locations
+  if (process.env.NODE_ENV === "production") {
+    console.warn(
+      "[PERSISTENCE WARNING] Project Repeat is running in production without a managed PostgreSQL DATABASE_URL. Real-world tenant persistence requires a PostgreSQL instance (e.g., Neon, Supabase, AWS RDS)."
+    );
+  }
+
+  // Local development SQLite resolution
   const candidates = [
     path.join(process.cwd(), "prisma", "dev.db"),
-    path.join(process.cwd(), ".next", "server", "prisma", "dev.db"),
     path.resolve("./prisma/dev.db"),
   ];
 

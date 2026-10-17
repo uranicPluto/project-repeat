@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, AlertCircle, Sparkles, QrCode } from "lucide-react";
+import { CheckCircle2, AlertCircle, Sparkles, QrCode, Award, Gift, ArrowRight } from "lucide-react";
 
 export default function CounterVerifyPage() {
   const params = useParams();
@@ -18,6 +18,11 @@ export default function CounterVerifyPage() {
   const [isLoading, setIsLoading] = React.useState(false);
   const [result, setResult] = React.useState<any | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+
+  // Redemption state
+  const [redeemingRewardId, setRedeemingRewardId] = React.useState<string | null>(null);
+  const [redemptionSuccess, setRedemptionSuccess] = React.useState<any | null>(null);
+  const [redemptionError, setRedemptionError] = React.useState<string | null>(null);
 
   // Fetch business info to get businessId
   React.useEffect(() => {
@@ -38,6 +43,8 @@ export default function CounterVerifyPage() {
 
     setError(null);
     setResult(null);
+    setRedemptionSuccess(null);
+    setRedemptionError(null);
     setIsLoading(true);
 
     try {
@@ -66,6 +73,47 @@ export default function CounterVerifyPage() {
     }
   };
 
+  const handleRedeemReward = async (rewardId: string) => {
+    if (!businessId || !result?.enrollmentId) return;
+
+    setRedeemingRewardId(rewardId);
+    setRedemptionError(null);
+
+    try {
+      const res = await fetch("/api/loyalty/redeem", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          enrollmentId: result.enrollmentId,
+          rewardId,
+          businessId,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to redeem reward");
+      }
+
+      setRedemptionSuccess(data.redemption);
+
+      // Update local state to show as redeemed
+      setResult((prev: any) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          redeemableRewards: prev.redeemableRewards?.map((r: any) =>
+            r.id === rewardId ? { ...r, isRedeemed: true } : r
+          ),
+        };
+      });
+    } catch (err: any) {
+      setRedemptionError(err.message || "Failed to redeem reward");
+    } finally {
+      setRedeemingRewardId(null);
+    }
+  };
+
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <div>
@@ -76,11 +124,11 @@ export default function CounterVerifyPage() {
           Verify Customer Visit
         </h1>
         <p className="text-sm text-brand-muted mt-1">
-          Enter the 6-digit verification code presented on the customer&apos;s phone to award an authentic stamp.
+          Enter the 6-digit verification code presented on the customer&apos;s phone to award an authentic stamp and redeem perks.
         </p>
       </div>
 
-      <Card className="border-2 border-brand-border">
+      <Card className="border-2 border-brand-border shadow-card">
         <CardHeader>
           <CardTitle className="text-lg">Counter Stamp Verification</CardTitle>
           <CardDescription>
@@ -97,7 +145,7 @@ export default function CounterVerifyPage() {
             )}
 
             {result && (
-              <div className="rounded-2xl bg-brand-success-subtle p-5 border border-emerald-200 space-y-2 text-center animate-in fade-in duration-300">
+              <div className="rounded-2xl bg-brand-success-subtle p-5 border border-emerald-200 space-y-3 text-center animate-in fade-in duration-300">
                 <div className="h-10 w-10 mx-auto rounded-full bg-emerald-100 text-brand-success flex items-center justify-center">
                   <CheckCircle2 className="h-6 w-6" />
                 </div>
@@ -106,13 +154,66 @@ export default function CounterVerifyPage() {
                   Customer now has{" "}
                   <strong className="text-emerald-950 font-bold">
                     {result.currentStamps} of {result.totalStamps} stamps
-                  </strong>
-                  .
+                  </strong>{" "}
+                  {result.currentCycle > 1 ? `(Cycle #${result.currentCycle})` : ""}.
                 </p>
                 {result.hasReachedCardCompletion && (
                   <Badge variant="success" className="mt-2 text-xs font-bold uppercase">
-                    🎉 Card Completed! Reward Unlocked!
+                    🎉 Card Completed! Top Reward Unlocked!
                   </Badge>
+                )}
+
+                {/* Redeemable Perks Section */}
+                {result.redeemableRewards && result.redeemableRewards.length > 0 && (
+                  <div className="pt-3 border-t border-emerald-200/60 text-left space-y-2">
+                    <h4 className="text-xs uppercase tracking-wider font-bold text-emerald-950 flex items-center">
+                      <Gift className="h-4 w-4 mr-1 text-emerald-700" />
+                      Eligible Perks to Claim at Counter
+                    </h4>
+
+                    {redemptionSuccess && (
+                      <div className="p-3 rounded-xl bg-emerald-100 text-xs font-semibold text-emerald-950 border border-emerald-300">
+                        ✓ Perk Authorized! Auth Code: <strong>{redemptionSuccess.redemptionCode || "RDM-CLAIMED"}</strong>
+                      </div>
+                    )}
+
+                    {redemptionError && (
+                      <div className="p-3 rounded-xl bg-red-50 text-xs font-semibold text-brand-error border border-red-200">
+                        {redemptionError}
+                      </div>
+                    )}
+
+                    <div className="space-y-2">
+                      {result.redeemableRewards.map((reward: any) => (
+                        <div
+                          key={reward.id}
+                          className="flex items-center justify-between p-3 rounded-xl bg-white border border-emerald-200 text-xs"
+                        >
+                          <div>
+                            <span className="font-bold text-brand-navy block">{reward.title}</span>
+                            <span className="text-[11px] text-brand-muted">
+                              Unlocked at {reward.stampsRequired} stamps
+                            </span>
+                          </div>
+                          <div>
+                            {reward.isRedeemed ? (
+                              <Badge variant="outline">Redeemed</Badge>
+                            ) : (
+                              <Button
+                                size="sm"
+                                variant="primary"
+                                className="text-xs h-8 px-3 font-semibold"
+                                isLoading={redeemingRewardId === reward.id}
+                                onClick={() => handleRedeemReward(reward.id)}
+                              >
+                                Authorize Perk
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 )}
               </div>
             )}

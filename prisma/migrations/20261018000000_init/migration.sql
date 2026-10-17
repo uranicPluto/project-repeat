@@ -88,6 +88,8 @@ CREATE TABLE "LoyaltyEnrollment" (
     "programId" TEXT NOT NULL,
     "status" TEXT NOT NULL DEFAULT 'ACTIVE',
     "currentStamps" INTEGER NOT NULL DEFAULT 0,
+    "currentCycle" INTEGER NOT NULL DEFAULT 1,
+    "lifetimeStamps" INTEGER NOT NULL DEFAULT 0,
     "enrolledAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -129,8 +131,11 @@ CREATE TABLE "RewardRedemption" (
     "enrollmentId" TEXT NOT NULL,
     "rewardId" TEXT NOT NULL,
     "staffUserId" TEXT NOT NULL,
+    "cycle" INTEGER NOT NULL DEFAULT 1,
     "status" TEXT NOT NULL DEFAULT 'REDEEMED',
+    "redemptionCode" TEXT,
     "redeemedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "expiresAt" TIMESTAMP(3),
 
     CONSTRAINT "RewardRedemption_pkey" PRIMARY KEY ("id")
 );
