@@ -59,6 +59,83 @@ export default async function BusinessPublicPage({ params }: BusinessPageProps) 
     console.error("Database query failed:", err);
   }
 
+  // Fallback demo data for instant preview when external DB is cold
+  const FALLBACK_BUSINESSES: Record<string, any> = {
+    "the-coffee-house": {
+      id: "biz-coffee-house",
+      name: "The Coffee House",
+      slug: "the-coffee-house",
+      category: "Cafe & Coffee Shop",
+      description: "Artisan espresso bar, single-origin roasts, and fresh morning pastries.",
+      address: "104 Indiranagar 100ft Road, Bengaluru",
+      primaryColor: "#315EFB",
+      secondaryColor: "#101828",
+      programs: [
+        {
+          id: "prog-coffee-house",
+          name: "Artisan Regulars Club",
+          cardTitle: "Coffee Regulars Stamp Card",
+          totalStamps: 5,
+          stampIcon: "cup",
+          status: "PUBLISHED",
+          terms: "Receive 1 stamp per beverage purchase. Valid at all branches.",
+          rewards: [
+            {
+              id: "rew-coffee-1",
+              stampsRequired: 3,
+              title: "15% Off Any Bakery Item",
+              description: "Enjoy a discount on our croissants and sourdoughs",
+              rewardType: "DISCOUNT_PERCENT",
+              discountValue: 15,
+            },
+            {
+              id: "rew-coffee-2",
+              stampsRequired: 5,
+              title: "Complimentary Coffee of Your Choice",
+              description: "Any regular size espresso, pour-over, or cold brew",
+              rewardType: "FREE_ITEM",
+            },
+          ],
+        },
+      ],
+    },
+    "urban-cuts": {
+      id: "biz-urban-cuts",
+      name: "Urban Cuts & Grooming",
+      slug: "urban-cuts",
+      category: "Salon & Barber",
+      description: "Contemporary styling, luxury grooming, and beard craft.",
+      address: "42 Church Street, Bengaluru",
+      primaryColor: "#059669",
+      secondaryColor: "#064E3B",
+      programs: [
+        {
+          id: "prog-urban-cuts",
+          name: "Grooming Club Card",
+          cardTitle: "VIP Haircut & Spa Card",
+          totalStamps: 6,
+          stampIcon: "star",
+          status: "PUBLISHED",
+          terms: "1 stamp per appointment over ₹400.",
+          rewards: [
+            {
+              id: "rew-salon-1",
+              stampsRequired: 6,
+              title: "50% Off Deluxe Haircut & Wash",
+              description: "Half off any haircut service on your 6th visit",
+              rewardType: "DISCOUNT_PERCENT",
+              discountValue: 50,
+            },
+          ],
+        },
+      ],
+    },
+  };
+
+  if (!business) {
+    business = FALLBACK_BUSINESSES[slug];
+  }
+
   if (!business) {
     notFound();
   }
@@ -133,12 +210,12 @@ export default async function BusinessPublicPage({ params }: BusinessPageProps) 
                       }
                     : null
                 }
-                rewards={program.rewards.map((r) => ({
+                rewards={program.rewards.map((r: any) => ({
                   id: r.id,
                   title: r.title,
                   description: r.description,
                   stampsRequired: r.stampsRequired,
-                  isRedeemed: enrollment?.redemptions.some((red) => red.rewardId === r.id),
+                  isRedeemed: enrollment?.redemptions.some((red: any) => red.rewardId === r.id),
                 }))}
                 isPreview={!enrollment}
               />

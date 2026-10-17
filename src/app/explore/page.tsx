@@ -21,8 +21,50 @@ export default async function ExplorePage() {
       },
       orderBy: { createdAt: "desc" },
     });
+    if (businesses.length === 0) {
+      businesses = [
+        {
+          id: "biz-coffee-house",
+          name: "The Coffee House",
+          slug: "the-coffee-house",
+          category: "Cafe & Coffee Shop",
+          description: "Artisan espresso bar, single-origin roasts, and fresh morning pastries.",
+          address: "104 Indiranagar 100ft Road, Bengaluru",
+          programs: [{ totalStamps: 5 }],
+        },
+        {
+          id: "biz-urban-cuts",
+          name: "Urban Cuts & Grooming",
+          slug: "urban-cuts",
+          category: "Salon & Barber",
+          description: "Contemporary styling, luxury grooming, and beard craft.",
+          address: "42 Church Street, Bengaluru",
+          programs: [{ totalStamps: 6 }],
+        },
+      ];
+    }
   } catch (err) {
     console.error("Explore page database error:", err);
+    businesses = [
+      {
+        id: "biz-coffee-house",
+        name: "The Coffee House",
+        slug: "the-coffee-house",
+        category: "Cafe & Coffee Shop",
+        description: "Artisan espresso bar, single-origin roasts, and fresh morning pastries.",
+        address: "104 Indiranagar 100ft Road, Bengaluru",
+        programs: [{ totalStamps: 5 }],
+      },
+      {
+        id: "biz-urban-cuts",
+        name: "Urban Cuts & Grooming",
+        slug: "urban-cuts",
+        category: "Salon & Barber",
+        description: "Contemporary styling, luxury grooming, and beard craft.",
+        address: "42 Church Street, Bengaluru",
+        programs: [{ totalStamps: 6 }],
+      },
+    ];
   }
 
   return (
