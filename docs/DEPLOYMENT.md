@@ -39,17 +39,16 @@ Configure the following environment variables in your Vercel project settings or
 ### A. Managed PostgreSQL (Neon / Supabase) Setup
 1. Create a PostgreSQL project on Neon or Supabase.
 2. Retrieve the pooled connection URL (e.g. PgBouncer port 6543 or Neon connection pooler).
-3. If using `prisma/schema.postgresql.prisma`, copy it or ensure `prisma/schema.prisma` has:
+3. The primary schema `prisma/schema.prisma` is pre-configured for PostgreSQL:
    ```prisma
    datasource db {
      provider  = "postgresql"
      url       = env("DATABASE_URL")
-     directUrl = env("DIRECT_URL")
    }
    ```
 4. Run migrations:
    ```bash
-   npx prisma migrate deploy --schema=prisma/schema.postgresql.prisma
+   npx prisma migrate deploy
    ```
    Or apply the checked-in migration script:
    ```bash

@@ -14,6 +14,16 @@ function getDatasourceUrl(): string | undefined {
   if (process.env.NODE_ENV === "production") {
     if (!envUrl || envUrl.startsWith("file:")) {
       if (process.env.ALLOW_SQLITE_IN_PRODUCTION !== "true") {
+        // If during Next.js build compilation (static analysis/page collection in CI/CD without database)
+        if (
+          process.env.IS_NEXT_BUILD === "true" ||
+          process.env.NEXT_PHASE === "phase-production-build" ||
+          process.env.CI === "1" ||
+          process.env.VERCEL === "1"
+        ) {
+          // Provide placeholder URL so Next.js static page analyzer doesn't crash during build time
+          return "postgresql://postgres:postgres@localhost:5432/build_placeholder";
+        }
         throw new Error(
           "FATAL DATABASE CONFIGURATION: Production mode requires a valid PostgreSQL DATABASE_URL. " +
           "Silent fallback to SQLite is blocked to prevent data loss on serverless restarts. " +
@@ -26,6 +36,11 @@ function getDatasourceUrl(): string | undefined {
     } else {
       return envUrl;
     }
+  }
+
+  // If explicit PostgreSQL DATABASE_URL provided (e.g. in dev or test)
+  if (envUrl && (envUrl.startsWith("postgresql://") || envUrl.startsWith("postgres://"))) {
+    return envUrl;
   }
 
   // Local development SQLite resolution

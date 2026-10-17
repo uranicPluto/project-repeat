@@ -7,7 +7,7 @@ Project Repeat uses **PostgreSQL** as its official production database engine, a
 - **Production Engine**: PostgreSQL 15+ (Neon, Supabase, AWS RDS, or self-hosted)
 - **Local Development**: SQLite (offline zero-dependency dev) or local PostgreSQL via Docker
 - **Connection Pooling**: Supported via PgBouncer / Prisma Accelerate (`?pgbouncer=true&connection_limit=10`)
-- **Schema Location**: `prisma/schema.postgresql.prisma` (Production) & `prisma/schema.prisma`
+- **Schema Location**: `prisma/schema.prisma` (Production PostgreSQL) & `prisma/schema.sqlite.prisma` (Offline SQLite)
 - **Health Check Probe**: `/api/health`
 
 ---
@@ -17,26 +17,24 @@ Project Repeat uses **PostgreSQL** as its official production database engine, a
 ### 1. Connecting a Managed PostgreSQL Instance
 In production on Vercel, Supabase, or AWS:
 1. Provision a PostgreSQL instance (e.g., Neon serverless Postgres).
-2. Set `DATABASE_URL` and `DIRECT_URL` in your production environment variables:
+2. Set `DATABASE_URL` in your production environment variables:
    ```env
    # Pooled connection string (for serverless execution)
    DATABASE_URL="postgresql://user:password@ep-repeat-pooler.us-east-2.aws.neon.tech/repeat?sslmode=require&pgbouncer=true"
-
-   # Direct connection string (for migrations)
-   DIRECT_URL="postgresql://user:password@ep-repeat.us-east-2.aws.neon.tech/repeat?sslmode=require"
    ```
 3. Deploy migrations:
    ```bash
-   npx prisma migrate deploy --schema=prisma/schema.postgresql.prisma
+   npx prisma migrate deploy
    ```
    Or apply the SQL migration directly:
    ```bash
    psql "$DATABASE_URL" -f prisma/migrations/20261018000000_init/migration.sql
    ```
 
-### 2. Dual-Schema Strategy
-- **`prisma/schema.postgresql.prisma`**: Primary production definition targeting `provider = "postgresql"`. Includes native PostgreSQL indexing, timestamp precision (`TIMESTAMP(3)`), and foreign key cascade rules.
-- **`prisma/schema.prisma`**: Configured for local SQLite development without requiring external database dependencies during offline development.
+### 2. Schema Strategy
+- **`prisma/schema.prisma`**: Primary production definition targeting `provider = "postgresql"`. Includes native PostgreSQL indexing, timestamp precision, and foreign key cascade rules. Automatically consumed by Vercel and CI during builds.
+- **`prisma/schema.sqlite.prisma`**: Configured for offline SQLite development without requiring external database dependencies.
+- **`prisma/schema.postgresql.prisma`**: Preserved for legacy script compatibility.
 
 ### 3. Production Runtime Guards
 - `src/lib/db/prisma.ts` enforces that if `NODE_ENV === "production"`, `DATABASE_URL` must be a valid PostgreSQL connection string. Silent fallback to SQLite is blocked with a fatal configuration error unless `ALLOW_SQLITE_IN_PRODUCTION=true` is explicitly provided for isolated preview evaluation.

@@ -19,16 +19,21 @@ export class NotificationService {
     businessId: string,
     channel: "email" | "sms" = "email"
   ): Promise<boolean> {
-    const consent = await prisma.customerConsent.findFirst({
-      where: {
-        customerId,
-        businessId: { in: [businessId, "platform"] },
-      },
-      orderBy: { updatedAt: "desc" },
-    });
+    try {
+      const consent = await prisma.customerConsent.findFirst({
+        where: {
+          customerId,
+          businessId: { in: [businessId, "platform"] },
+        },
+        orderBy: { updatedAt: "desc" },
+      });
 
-    if (!consent) return false;
-    return channel === "email" ? consent.marketingEmail : consent.marketingSms;
+      if (!consent) return false;
+      return channel === "email" ? consent.marketingEmail : consent.marketingSms;
+    } catch {
+      // Safe default: if consent cannot be affirmatively verified, suppress marketing
+      return false;
+    }
   }
 
   /**
