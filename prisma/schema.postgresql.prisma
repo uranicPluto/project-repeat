@@ -1,0 +1,226 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id              String             @id @default(cuid())
+  email           String             @unique
+  name            String
+  phone           String?
+  passwordHash    String
+  role            String             @default("CUSTOMER") // PLATFORM_ADMIN, BUSINESS_USER, CUSTOMER
+  status          String             @default("ACTIVE") // ACTIVE, SUSPENDED, PENDING
+  emailVerifiedAt DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  memberships     BusinessMembership[]
+  enrollments     LoyaltyEnrollment[]
+  verifiedVisits  VisitVerification[] @relation("StaffVerifications")
+  redeemedRewards RewardRedemption[]  @relation("StaffRedemptions")
+  auditLogs       AuditLog[]
+
+  @@index([email])
+}
+
+model Business {
+  id             String             @id @default(cuid())
+  name           String
+  slug           String             @unique
+  category       String
+  description    String?
+  logoUrl        String?
+  address        String?
+  timeZone       String             @default("Asia/Kolkata")
+  currency       String             @default("INR")
+  status         String             @default("ACTIVE") // ONBOARDING, ACTIVE, SUSPENDED
+  primaryColor   String             @default("#315EFB")
+  secondaryColor String             @default("#101828")
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  memberships    BusinessMembership[]
+  programs       LoyaltyProgram[]
+  enrollments    LoyaltyEnrollment[]
+  subscription   Subscription?
+  auditLogs      AuditLog[]
+
+  @@index([slug])
+}
+
+model BusinessMembership {
+  id         String   @id @default(cuid())
+  userId     String
+  businessId String
+  role       String   @default("STAFF") // OWNER, MANAGER, STAFF
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, businessId])
+  @@index([businessId])
+  @@index([userId])
+}
+
+model LoyaltyProgram {
+  id          String   @id @default(cuid())
+  businessId  String
+  name        String
+  cardTitle   String
+  totalStamps Int      @default(5)
+  stampIcon   String   @default("cup") // cup, star, tag, gift
+  status      String   @default("PUBLISHED") // DRAFT, PUBLISHED, ARCHIVED
+  version     Int      @default(1)
+  terms       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  rewards     Reward[]
+  enrollments LoyaltyEnrollment[]
+
+  @@index([businessId])
+}
+
+model Reward {
+  id             String   @id @default(cuid())
+  programId      String
+  stampsRequired Int
+  title          String
+  description    String?
+  rewardType     String   @default("FREE_ITEM") // FREE_ITEM, DISCOUNT_PERCENT, DISCOUNT_FIXED
+  discountValue  Int?     // minor units: 20 for 20%, 5000 for 50.00
+  validityDays   Int      @default(30)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  program        LoyaltyProgram     @relation(fields: [programId], references: [id], onDelete: Cascade)
+  redemptions    RewardRedemption[]
+
+  @@index([programId])
+}
+
+model LoyaltyEnrollment {
+  id            String   @id @default(cuid())
+  customerId    String
+  businessId    String
+  programId     String
+  status        String   @default("ACTIVE") // ACTIVE, PAUSED, CLOSED
+  currentStamps Int      @default(0)
+  enrolledAt    DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  customer      User     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  business      Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  program       LoyaltyProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  transactions  LoyaltyTransaction[]
+  verifications VisitVerification[]
+  redemptions   RewardRedemption[]
+
+  @@unique([customerId, programId])
+  @@index([businessId])
+  @@index([customerId])
+}
+
+model LoyaltyTransaction {
+  id            String   @id @default(cuid())
+  enrollmentId  String
+  type          String   // STAMP_EARNED, REWARD_REDEEMED, STAMP_EXPIRED, ADMIN_ADJUSTMENT
+  stampsDelta   Int
+  balanceAfter  Int
+  referenceCode String?
+  staffUserId   String?
+  createdAt     DateTime @default(now())
+
+  enrollment    LoyaltyEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+
+  @@index([enrollmentId])
+}
+
+model VisitVerification {
+  id                String    @id @default(cuid())
+  enrollmentId      String
+  code              String    // 6-digit verification code
+  tokenHash         String    @unique
+  expiresAt         DateTime
+  status            String    @default("PENDING") // PENDING, VERIFIED, EXPIRED, CANCELLED
+  verifiedByStaffId String?
+  verifiedAt        DateTime?
+  createdAt         DateTime  @default(now())
+
+  enrollment        LoyaltyEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  verifiedByStaff   User?             @relation("StaffVerifications", fields: [verifiedByStaffId], references: [id])
+
+  @@index([enrollmentId])
+  @@index([code])
+}
+
+model RewardRedemption {
+  id           String   @id @default(cuid())
+  enrollmentId String
+  rewardId     String
+  staffUserId  String
+  status       String   @default("REDEEMED") // REDEEMED, CANCELLED
+  redeemedAt   DateTime @default(now())
+
+  enrollment   LoyaltyEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  reward       Reward            @relation(fields: [rewardId], references: [id], onDelete: Cascade)
+  staffUser    User              @relation("StaffRedemptions", fields: [staffUserId], references: [id])
+
+  @@index([enrollmentId])
+  @@index([rewardId])
+}
+
+model Subscription {
+  id                     String   @id @default(cuid())
+  businessId             String   @unique
+  planId                 String   @default("STARTER") // STARTER, GROWTH, PRO, ENTERPRISE
+  status                 String   @default("ACTIVE") // TRIALING, ACTIVE, PAST_DUE, CANCELLED
+  currentPeriodStart     DateTime @default(now())
+  currentPeriodEnd       DateTime
+  paymentProvider        String   @default("mock") // razorpay, mock
+  providerSubscriptionId String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  business               Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  actorUserId String?
+  businessId  String?
+  action      String
+  details     String?  // JSON stringified payload
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+
+  actorUser   User?     @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  business    Business? @relation(fields: [businessId], references: [id], onDelete: SetNull)
+
+  @@index([businessId])
+  @@index([actorUserId])
+}
+
+model CustomerConsent {
+  id             String   @id @default(cuid())
+  customerId     String
+  businessId     String
+  marketingEmail Boolean  @default(false)
+  marketingSms   Boolean  @default(false)
+  updatedAt      DateTime @updatedAt
+
+  @@unique([customerId, businessId])
+  @@index([customerId])
+}
