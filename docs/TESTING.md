@@ -96,4 +96,20 @@ npx tsc --noEmit
 
 # Run production build compilation
 npm run build
+
+# Run live end-to-end integration test against Supabase PostgreSQL
+npm run test:e2e:supabase
 ```
+
+---
+
+## 3. Live End-to-End Database Integration Suite (`scripts/e2e-flow-test.js`)
+
+Executes against live Supabase PostgreSQL:
+- **Tenant Creation**: Creates new `Business` tenant and validates slug routing.
+- **Role Assignment**: Creates Owner and Staff members with scoped `BusinessMembership`.
+- **Card Lifecycle**: Creates 5-stamp `LoyaltyProgram` and 2 milestone `Reward` records.
+- **Customer Journey**: Enrolls customer, issues 6-digit expiring verification code, performs atomic staff CAS verification, awards stamps across multiple visits.
+- **Redemption & Concurrency**: Unlocks milestone reward, redeems reward, and physically verifies PostgreSQL compound constraint `@@unique([enrollmentId, rewardId, cycle])` rejects concurrent duplicate redemptions.
+- **Card Rollover**: Completes Cycle 1 upon reaching 5 stamps, seamlessly rolling over to Cycle 2 with lifetime stamps preserved.
+- **Audit Verification**: Validates 100% relational integrity across all 12 tables with zero data loss.

@@ -132,8 +132,9 @@ src/
     billing.ts                   # Plan catalog, plan limits & timing-safe webhook verification
     notifications.ts             # Consent-aware transactional and marketing notification dispatcher
 prisma/
-  schema.prisma                  # SQLite (dev) / PostgreSQL schema
-  schema.postgresql.prisma       # Dedicated PostgreSQL production schema
+  schema.prisma                  # Primary PostgreSQL production schema (Vercel / Supabase)
+  schema.sqlite.prisma           # Offline SQLite development schema
+  schema.postgresql.prisma       # Dedicated PostgreSQL schema reference
   migrations/                    # Version-controlled migrations
   seed.js                        # Demo seed data script with production guards
 tests/
