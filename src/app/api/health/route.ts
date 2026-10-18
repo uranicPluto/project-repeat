@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
+import { prisma, getDatasourceUrl } from "@/lib/db/prisma";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +10,7 @@ export async function GET() {
     await prisma.$queryRaw`SELECT 1`;
     const latencyMs = Date.now() - startTime;
 
-    const dbUrl = process.env.DATABASE_URL || "";
+    const dbUrl = getDatasourceUrl();
     const isPostgres = dbUrl.startsWith("postgres://") || dbUrl.startsWith("postgresql://");
     const isSqlite = dbUrl.startsWith("file:") || (!dbUrl && process.env.NODE_ENV !== "production");
 
