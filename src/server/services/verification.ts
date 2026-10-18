@@ -88,6 +88,34 @@ export class VerificationService {
       });
 
       if (!verification) {
+        // Check if code was created for another business tenant
+        const otherBiz = await tx.visitVerification.findFirst({
+          where: { code, status: "PENDING" },
+          include: { enrollment: { include: { business: true } } },
+        });
+        if (otherBiz && otherBiz.enrollment.businessId !== businessId) {
+          throw new Error(
+            `This verification code belongs to "${otherBiz.enrollment.business.name}". Please ask the customer to select this business's loyalty card, or switch to the matching business terminal.`
+          );
+        }
+
+        // Check if code was already verified, expired, or cancelled
+        const historical = await tx.visitVerification.findFirst({
+          where: { code, enrollment: { businessId } },
+          orderBy: { createdAt: "desc" },
+        });
+        if (historical) {
+          if (historical.status === "VERIFIED") {
+            throw new Error("This verification code was already redeemed and verified.");
+          }
+          if (historical.status === "EXPIRED" || new Date() > historical.expiresAt) {
+            throw new Error("This verification code has expired (3-minute limit). Please ask the customer to tap 'Refresh Code'.");
+          }
+          if (historical.status === "CANCELLED") {
+            throw new Error("This verification code was cancelled because a newer code was generated. Please enter the latest code shown on the customer's phone.");
+          }
+        }
+
         throw new Error("Invalid or already used verification code");
       }
 
@@ -97,7 +125,7 @@ export class VerificationService {
           where: { id: verification.id },
           data: { status: "EXPIRED" },
         });
-        throw new Error("Verification code has expired. Please ask the customer to generate a new one.");
+        throw new Error("Verification code has expired (3-minute limit). Please ask the customer to tap 'Refresh Code'.");
       }
 
       // Atomic single-use claim: Update status from PENDING to VERIFIED

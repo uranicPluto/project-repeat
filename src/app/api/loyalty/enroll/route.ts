@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRequestSession } from "@/lib/auth/session";
 import { LoyaltyService } from "@/server/services/loyalty";
 
+import { prisma } from "@/lib/db/prisma";
+
 export async function POST(req: NextRequest) {
   try {
     const session = await getRequestSession(req);
@@ -10,10 +12,20 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { programId } = body;
+    let { programId } = body;
+    const { businessSlug } = body;
+
+    if (!programId && businessSlug) {
+      const prog = await prisma.loyaltyProgram.findFirst({
+        where: { business: { slug: businessSlug }, status: "PUBLISHED" },
+      });
+      if (prog) {
+        programId = prog.id;
+      }
+    }
 
     if (!programId) {
-      return NextResponse.json({ error: "Program ID is required" }, { status: 400 });
+      return NextResponse.json({ error: "Program ID or business slug is required" }, { status: 400 });
     }
 
     const enrollment = await LoyaltyService.enrollCustomer(session.userId, programId);

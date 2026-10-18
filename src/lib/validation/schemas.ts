@@ -58,11 +58,16 @@ export const createVerificationTokenSchema = z.object({
   enrollmentId: z.string().min(1, "Enrollment ID is required"),
 });
 
-export const verifyVisitSchema = z.object({
-  code: z.string().length(6, "Verification code must be exactly 6 digits"),
-  businessId: z.string().min(1, "Business ID is required"),
-  referenceCode: z.string().optional(),
-});
+export const verifyVisitSchema = z
+  .object({
+    code: z.string().length(6, "Verification code must be exactly 6 digits"),
+    businessId: z.string().optional(),
+    businessSlug: z.string().optional(),
+    referenceCode: z.string().optional(),
+  })
+  .refine((data) => Boolean(data.businessId || data.businessSlug), {
+    message: "Either businessId or businessSlug is required",
+  });
 
 // Reward Redemption Schema
 export const redeemRewardSchema = z.object({

@@ -27,10 +27,12 @@ export function VerificationModal({
   const [qrDataUrl, setQrDataUrl] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [verifiedData, setVerifiedData] = React.useState<any | null>(null);
 
   const fetchVerificationCode = React.useCallback(async () => {
     setIsLoading(true);
     setError(null);
+    setVerifiedData(null);
     try {
       const res = await fetch("/api/visits/request-code", {
         method: "POST",
@@ -67,12 +69,35 @@ export function VerificationModal({
     } else {
       setCode(null);
       setQrDataUrl(null);
+      setVerifiedData(null);
     }
   }, [isOpen, enrollmentId, fetchVerificationCode]);
 
+  // Poll for verification completion while open
+  React.useEffect(() => {
+    if (!isOpen || !code || verifiedData) return;
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/visits/status?code=${code}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.status === "VERIFIED") {
+            setVerifiedData(data);
+            onVerifiedSuccess?.();
+          }
+        }
+      } catch {
+        // Silently ignore polling network blips
+      }
+    }, 2500);
+
+    return () => clearInterval(pollInterval);
+  }, [isOpen, code, verifiedData, onVerifiedSuccess]);
+
   // Countdown timer
   React.useEffect(() => {
-    if (!isOpen || !expiresAt) return;
+    if (!isOpen || !expiresAt || verifiedData) return;
 
     const interval = setInterval(() => {
       const remaining = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000));
@@ -83,7 +108,7 @@ export function VerificationModal({
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isOpen, expiresAt]);
+  }, [isOpen, expiresAt, verifiedData]);
 
   const minutes = Math.floor(timeLeft / 60);
   const seconds = timeLeft % 60;
@@ -93,11 +118,39 @@ export function VerificationModal({
     <Dialog
       isOpen={isOpen}
       onClose={onClose}
-      title="Verify Your Visit"
-      description={`Show this code to staff at ${businessName} to claim your stamp.`}
+      title={verifiedData ? "Stamp Awarded!" : "Verify Your Visit"}
+      description={
+        verifiedData
+          ? `Your loyalty stamp was verified by staff at ${businessName}.`
+          : `Show this code to staff at ${businessName} to claim your stamp.`
+      }
     >
       <div className="flex flex-col items-center justify-center space-y-6 py-2 text-center">
-        {isLoading ? (
+        {verifiedData ? (
+          <div className="flex flex-col items-center justify-center py-4 space-y-4 animate-in zoom-in-95 duration-300 w-full">
+            <div className="h-16 w-16 rounded-full bg-emerald-100 text-brand-success flex items-center justify-center shadow-md animate-bounce">
+              <CheckCircle2 className="h-10 w-10 text-emerald-600" />
+            </div>
+            <div className="space-y-1 text-center">
+              <h3 className="text-xl font-extrabold text-brand-navy">Visit Verified!</h3>
+              <p className="text-sm text-brand-muted">
+                You just earned +1 authentic stamp at <strong className="text-brand-navy">{businessName}</strong>.
+              </p>
+              <div className="pt-2">
+                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                  {verifiedData.currentStamps} of {verifiedData.totalStamps} stamps collected
+                </span>
+              </div>
+            </div>
+            <Button
+              variant="primary"
+              className="w-full mt-2 font-bold shadow-md"
+              onClick={onClose}
+            >
+              View Updated Card
+            </Button>
+          </div>
+        ) : isLoading ? (
           <div className="flex flex-col items-center justify-center py-12 space-y-3">
             <Loader2 className="h-8 w-8 animate-spin text-brand-blue" />
             <p className="text-sm text-brand-muted">Generating secure verification code...</p>
