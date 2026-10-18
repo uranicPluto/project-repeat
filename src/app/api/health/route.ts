@@ -37,7 +37,7 @@ export async function GET() {
         database: {
           connected: false,
           latencyMs,
-          error: "Database connectivity probe failed",
+          error: error?.message || "Database connectivity probe failed",
         },
         environment: process.env.NODE_ENV || "development",
       },

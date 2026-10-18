@@ -1,7 +1,7 @@
 import { PHASE_PRODUCTION_BUILD } from "next/constants.js";
 
 const DEFAULT_POSTGRES_URL =
-  "postgresql://postgres:%40126Ve960repeat@db.mxjsppfyorwqqoiorqia.supabase.co:5432/postgres";
+  "postgresql://postgres.mxjsppfyorwqqoiorqia:%40126Ve960repeat@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres?sslmode=require&pgbouncer=true";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = (phase) => ({

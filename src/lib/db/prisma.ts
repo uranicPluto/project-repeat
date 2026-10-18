@@ -8,18 +8,22 @@ declare global {
 }
 
 export const SUPABASE_URL_DEFAULT =
-  "postgresql://postgres:%40126Ve960repeat@db.mxjsppfyorwqqoiorqia.supabase.co:5432/postgres";
+  "postgresql://postgres.mxjsppfyorwqqoiorqia:%40126Ve960repeat@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres?sslmode=require&pgbouncer=true";
 
 export function getDatasourceUrl(): string {
   const envUrl = process.env.DATABASE_URL;
 
   // If explicit PostgreSQL DATABASE_URL is provided
   if (envUrl && (envUrl.startsWith("postgresql://") || envUrl.startsWith("postgres://"))) {
-    // If running on Vercel serverless runtime or in production and DATABASE_URL points to localhost, fall back to Supabase
+    // If running on Vercel serverless runtime or in production and DATABASE_URL points to localhost, fall back to Supabase pooler
     if (
       (process.env.VERCEL === "1" || process.env.NODE_ENV === "production") &&
       (envUrl.includes("localhost") || envUrl.includes("127.0.0.1"))
     ) {
+      return SUPABASE_URL_DEFAULT;
+    }
+    // If running on Vercel and URL is direct Supabase db host (which lacks IPv4 routing in AWS Lambda VPC), route via pooler
+    if (process.env.VERCEL === "1" && envUrl.includes("db.mxjsppfyorwqqoiorqia.supabase.co")) {
       return SUPABASE_URL_DEFAULT;
     }
     return envUrl;
